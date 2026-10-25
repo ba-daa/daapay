@@ -1,7 +1,8 @@
 // DAA Pay — Cloudflare Worker: API, sign-in, role rules, files, email, weekly report, backups.
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
-const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log'];
+const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs'];
+const APP_VERSION = '0.2.0';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -162,6 +163,7 @@ async function limit(env, key, max, windowMs) {
 function publicUser(u) {
   const o = Object.assign({}, u); delete o.pw;
   o.totp = u.totp && u.totp.on ? { on: true, at: u.totp.at || '' } : { on: false };
+  o.pending = !u.pw;
   return o;
 }
 function itemVisible(me, x, usersById) {
@@ -187,6 +189,9 @@ async function api(req, env, url, ctx) {
   if (p === '/api/login/code' && m === 'POST') return loginCode(req, env);
   if (p === '/api/login/setup' && m === 'POST') return loginSetup(req, env);
   if (p === '/api/register' && m === 'POST') return register(req, env);
+  if (p === '/api/reset/request' && m === 'POST') return resetRequest(req, env);
+  if (p === '/api/token' && m === 'GET') return tokenInfo(env, url.searchParams.get('t'));
+  if (p === '/api/token/use' && m === 'POST') return tokenUse(req, env);
   if (p === '/api/logout' && m === 'POST') {
     const cur = await readSession(req, env);
     if (cur) { if (cur.stage === 'full') await logEvent(env, cur.user_id, 'signin', nameOf(cur.user) + ' signed out'); await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(cur.token).run(); }
@@ -210,6 +215,9 @@ async function api(req, env, url, ctx) {
   if (p === '/api/totp/enable' && m === 'POST') return totpEnable(env, s, await body(req));
   if (p === '/api/totp/disable' && m === 'POST') return totpDisable(env, me);
   if (p === '/api/users/create' && m === 'POST') return createUser(env, me, await body(req));
+  if (p === '/api/users/invite' && m === 'POST') return resendInvite(env, me, await body(req));
+  if (p === '/api/notify/new' && m === 'POST') return notifyNew(env, me, await body(req));
+  if (p === '/api/bug' && m === 'POST') return reportBug(req, env, me, await body(req));
   if (p === '/api/regs/approve' && m === 'POST') return approveReg(env, me, await body(req));
   if (p === '/api/backup' && m === 'GET') return backupApi(env, me);
   if (p === '/api/import' && m === 'POST') return importApi(env, me, await body(req));
@@ -305,6 +313,12 @@ async function register(req, env) {
   await putDoc(env, 'regs', rid('r'), { first: t('first'), last: t('last'), position: t('position'), email, approver: ap, approverId: apU.id, role: 'aa', pw: await hashPw(String(b.pass)), time: podgoricaStamp(ts).short, ts });
   await putDoc(env, 'notifs', rid('n'), { to: apU.id, reg: true, text: nm + ' (' + t('position') + ') requested access.', ts, time: podgoricaStamp(ts).short, readBy: {} });
   if (apU.role !== 'ceo') await putDoc(env, 'notifs', rid('n'), { to: 'role:ceo', reg: true, text: nm + ' requested access (confirm: ' + ap + ').', ts, time: podgoricaStamp(ts).short, readBy: {} });
+  if (env.RESEND_API_KEY) {
+    await sendMail(env, mailOf(env, [email], 'We received your DAA Pay access request', 'Welcome to DAA Pay, ' + t('first'),
+      ['Thank you for requesting access. ' + nameOf(apU) + ' (' + ap + ') will review it.', 'You get another email as soon as it is approved. Then you sign in with the email and password you just chose.'])).catch(() => {});
+    await sendMail(env, mailOf(env, [apU.email], 'New DAA Pay access request: ' + nm, 'New access request',
+      [nm + ' (' + t('position') + ', ' + email + ') asked for access and named you to confirm it.', 'Open Users & roles in DAA Pay to approve the request with a role, or deny it.'], { label: 'Review the request', url: appUrl(env) })).catch(() => {});
+  }
   return json({ ok: true, approver: ap });
 }
 
@@ -326,6 +340,7 @@ async function sync(env, me, since) {
     else if (r.col === 'regs') { if (!(isTop(me.role) || me.role === 'am')) continue; d = Object.assign({}, d); delete d.pw; }
     else if (r.col === 'items') { if (!itemVisible(me, Object.assign({ id: r.id }, d), usersById)) continue; }
     else if (r.col === 'notifs') { if (!notifVisible(me, d)) continue; }
+    else if (r.col === 'bugs') { if (!isTop(me.role) && d.by !== me.id) continue; }
     else if (r.col === 'log') { if (!isTop(me.role) && d.by !== me.id && !(d.itemId && items[d.itemId] && itemVisible(me, Object.assign({ id: d.itemId }, items[d.itemId]), usersById))) continue; }
     out[r.col].push({ id: r.id, data: d });
   }
@@ -401,6 +416,10 @@ async function writeDoc(env, me, b) {
   } else if (col === 'log') {
     if (op !== 'set' || cur) deny();
     next = Object.assign({}, data, { by: me.id, ts: now(), time: podgoricaStamp().short });
+  } else if (col === 'bugs') {
+    if (op === 'delete' || !cur || !isTop(role)) deny('Bug reports are sent from Help · Report a bug.');
+    const ks = Object.keys(data); if (!ks.every((k) => ['status', 'note'].includes(k))) deny();
+    next = merge(cur, Object.assign({}, data, { statusBy: me.id, statusAt: podgoricaStamp().short }));
   } else if (col === 'bens') {
     if (op === 'delete' && !top) deny('Only the CEO or Super-admin can delete beneficiaries.');
   } else if (col === 'clients' || col === 'projects') {
@@ -420,14 +439,18 @@ async function createUser(env, me, b) {
   const email = t('email').toLowerCase(), role = allowed.includes(b.role) ? b.role : 'aa';
   if (!t('first') || !t('last') || !t('position')) fail(400, 'Add first name, last name and position.');
   if (!/@daa\.co\.me$/.test(email)) fail(400, 'Use a @daa.co.me email address.');
-  if (String(b.pass || '').length < 8) fail(400, 'Set a starting password of at least 8 characters.');
+  const pass = String(b.pass || '');
+  if (pass && pass.length < 8) fail(400, 'A starting password needs at least 8 characters. Or leave it empty to send an invitation link.');
   const users = await allDocs(env, 'users');
   if (users.some((u) => (u.email || '').toLowerCase() === email)) fail(400, 'An account with this email already exists.');
   const managerId = role === 'aa' ? (me.role === 'am' ? me.id : t('managerId')) : '';
   const id = rid('u');
-  await putDoc(env, 'users', id, { first: t('first'), last: t('last'), position: t('position'), email, role, managerId, pw: await hashPw(String(b.pass)), active: true, createdAt: podgoricaStamp().short, createdBy: me.id });
-  await logEvent(env, me.id, 'users', 'Created account ' + email + ' as ' + ROLE[role]);
-  return json({ ok: true, id });
+  const u = { first: t('first'), last: t('last'), position: t('position'), email, role, managerId, active: true, createdAt: podgoricaStamp().short, createdBy: me.id };
+  if (pass) u.pw = await hashPw(pass);
+  await putDoc(env, 'users', id, u);
+  await logEvent(env, me.id, 'users', 'Created account ' + email + ' as ' + ROLE[role] + (pass ? '' : ' (invitation)'));
+  const r = await welcome(env, me, Object.assign({ id }, u), !pass);
+  return json(Object.assign({ ok: true, id }, r));
 }
 async function approveReg(env, me, b) {
   const allowed = isTop(me.role) ? ['sa', 'ceo', 'am', 'aa', 'om'] : me.role === 'am' ? ['aa'] : [];
@@ -439,7 +462,8 @@ async function approveReg(env, me, b) {
   await putDoc(env, 'users', rid('u'), { first: r.first, last: r.last, position: r.position, email: r.email, role, managerId: role === 'aa' && me.role === 'am' ? me.id : '', pw: r.pw, active: true, createdAt: podgoricaStamp().short, createdBy: me.id });
   await delDoc(env, 'regs', String(b.id));
   await logEvent(env, me.id, 'users', 'Approved access for ' + r.first + ' ' + r.last + ' (' + r.email + ') as ' + ROLE[role]);
-  if (env.RESEND_API_KEY) await sendMail(env, { to: [r.email], subject: 'Your DAA Pay access is approved', text: 'Hello ' + r.first + ',\n\nYour access to DAA Pay is approved. Sign in with the email and password you chose:\n' + appUrl(env) + '\n', html: '<p>Hello ' + esc(r.first) + ',</p><p>Your access to DAA Pay is approved. Sign in with the email and password you chose.</p><p><a href="' + appUrl(env) + '">Open DAA Pay</a></p>' }).catch(() => {});
+  if (env.RESEND_API_KEY) await sendMail(env, mailOf(env, [r.email], 'Welcome to DAA Pay: your access is approved', 'Welcome to DAA Pay, ' + r.first,
+    [nameOf(me) + ' approved your access as ' + ROLE[role] + '.', 'Sign in with the email and password you chose when you asked for access.'].concat(roleIntro(role)), { label: 'Sign in to DAA Pay', url: appUrl(env) })).catch(() => {});
   return json({ ok: true });
 }
 async function changePassword(env, me, b) {
@@ -499,7 +523,130 @@ async function getFile(req, env, url) {
   return new Response(obj.body, { headers: { 'content-type': meta.type, 'content-disposition': 'inline; filename*=UTF-8\'\'' + encodeURIComponent(meta.name), 'cache-control': 'private, max-age=3600' } });
 }
 
+// ---------------------------------------------------------------- welcome emails, invitations, password reset
+function roleIntro(role) {
+  return {
+    sa: ['As Super-admin you see every request and manage people, roles, backups and settings.'],
+    ceo: ['As CEO you see every request, approve them for payment and send them to payment.'],
+    am: ['As Account manager you add requests, approve or deny them, and see your assistants’ requests.'],
+    aa: ['As Account assistant you add invoices, refunds and contract payments, and follow what happens to them.'],
+    om: ['As Office manager you see every request and mark payments as paid once they are executed.']
+  }[role] || [];
+}
+async function makeToken(env, userId, kind, days) {
+  await env.DB.prepare('DELETE FROM tokens WHERE user_id = ? AND kind = ?').bind(userId, kind).run();
+  const token = hex(crypto.getRandomValues(new Uint8Array(24)));
+  await env.DB.prepare('INSERT INTO tokens (token, user_id, kind, created, expires) VALUES (?, ?, ?, ?, ?)').bind(token, userId, kind, now(), now() + days * 864e5).run();
+  return appUrl(env) + '/?' + (kind === 'invite' ? 'invite' : 'reset') + '=' + token;
+}
+async function welcome(env, me, u, invite) {
+  const link = invite ? await makeToken(env, u.id, 'invite', 7) : null;
+  const lines = [nameOf(me) + ' created a DAA Pay account for you (' + u.email + ').'].concat(roleIntro(u.role));
+  const msg = invite
+    ? mailOf(env, [u.email], 'You are invited to DAA Pay', 'Welcome to DAA Pay, ' + u.first, lines.concat(['Choose your password with the button below. The link works for 7 days.']), { label: 'Choose my password', url: link })
+    : mailOf(env, [u.email], 'Welcome to DAA Pay', 'Welcome to DAA Pay, ' + u.first, lines.concat([nameOf(me) + ' will give you your starting password. Change it in Profile settings after you sign in.']), { label: 'Sign in to DAA Pay', url: appUrl(env) });
+  if (!env.RESEND_API_KEY) return { emailed: false, link };
+  try { await sendMail(env, msg); return { emailed: true, link: null }; } catch (e) { return { emailed: false, link, emailError: e.message }; }
+}
+async function resendInvite(env, me, b) {
+  const id = String(b.id || ''), u0 = await getDoc(env, 'users', id);
+  if (!u0) fail(404, 'That account no longer exists.');
+  if (!(isTop(me.role) || (me.role === 'am' && u0.role === 'aa'))) fail(403, 'Your role cannot do this for this person.');
+  if (!u0.pw) {
+    const r = await welcome(env, me, Object.assign({ id }, u0), true);
+    await logEvent(env, me.id, 'users', 'Sent a new invitation to ' + u0.email);
+    return json(Object.assign({ ok: true, kind: 'invite' }, r));
+  }
+  const link = await makeToken(env, id, 'reset', 1);
+  await logEvent(env, me.id, 'security', 'Sent a password reset link to ' + u0.email);
+  if (!env.RESEND_API_KEY) return json({ ok: true, kind: 'reset', emailed: false, link });
+  try {
+    await sendMail(env, mailOf(env, [u0.email], 'Choose a new DAA Pay password', 'Choose a new password', [nameOf(me) + ' sent you a link to choose a new password for ' + u0.email + '. It works for 24 hours.'], { label: 'Choose a new password', url: link }));
+    return json({ ok: true, kind: 'reset', emailed: true });
+  } catch (e) { return json({ ok: true, kind: 'reset', emailed: false, link, emailError: e.message }); }
+}
+async function resetRequest(req, env) {
+  const b = await body(req), email = String(b.email || '').trim().toLowerCase();
+  await limit(env, 'reset:' + (req.headers.get('cf-connecting-ip') || 'x'), 5, 60 * 60e3);
+  const u = (await allDocs(env, 'users')).find((x) => (x.email || '').toLowerCase() === email && x.active !== false);
+  if (u && env.RESEND_API_KEY) {
+    const link = await makeToken(env, u.id, u.pw ? 'reset' : 'invite', 1);
+    await sendMail(env, mailOf(env, [u.email], 'Choose a new DAA Pay password', 'Choose a new password', ['Someone asked to reset the password for ' + u.email + '. If it was you, use the button below. The link works for 24 hours.', 'If it was not you, ignore this email; your password stays the same.'], { label: 'Choose a new password', url: link })).catch(() => {});
+  }
+  return json({ ok: true, emailOn: !!env.RESEND_API_KEY });   // same answer whether or not the email exists
+}
+async function readToken(env, t) {
+  if (!t || !/^[0-9a-f]{48}$/.test(t)) return null;
+  const r = await env.DB.prepare('SELECT * FROM tokens WHERE token = ?').bind(t).first();
+  if (!r || r.expires < now()) return null;
+  const u = await getDoc(env, 'users', r.user_id);
+  return u && u.active !== false ? { row: r, user: u } : null;
+}
+async function tokenInfo(env, t) {
+  const x = await readToken(env, t);
+  if (!x) fail(404, 'This link has expired or was already used. Ask for a new one.');
+  return json({ kind: x.row.kind, email: x.user.email, first: x.user.first });
+}
+async function tokenUse(req, env) {
+  const b = await body(req), x = await readToken(env, String(b.t || ''));
+  if (!x) fail(404, 'This link has expired or was already used. Ask for a new one.');
+  if (String(b.pass || '').length < 8) fail(400, 'Choose a password of at least 8 characters.');
+  const u = Object.assign({}, x.user); u.pw = await hashPw(String(b.pass));
+  await putDoc(env, 'users', x.row.user_id, u);
+  await env.DB.prepare('DELETE FROM tokens WHERE user_id = ?').bind(x.row.user_id).run();
+  await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(x.row.user_id).run();
+  await logEvent(env, x.row.user_id, 'security', nameOf(u) + (x.row.kind === 'invite' ? ' accepted the invitation and chose a password' : ' reset their password'));
+  return json({ ok: true, email: u.email });
+}
+// One email per batch of new requests, to the people who review them.
+async function notifyNew(env, me, b) {
+  if (!env.RESEND_API_KEY) return json({ ok: true, emailed: false });
+  const ids = (b.ids || []).slice(0, 50).map(String);
+  const items = [];
+  for (const id of ids) { const x = await getDoc(env, 'items', id); if (x && x.by === me.id) items.push(x); }
+  if (!items.length) return json({ ok: true, emailed: false });
+  const users = (await allDocs(env, 'users')).filter((u) => u.active !== false && u.email && u.id !== me.id);
+  const to = new Set(users.filter((u) => isTop(u.role)).map((u) => u.email));
+  if (me.role === 'aa') users.filter((u) => u.role === 'am' && (!me.managerId || u.id === me.managerId)).forEach((u) => to.add(u.email));
+  if (!to.size) return json({ ok: true, emailed: false });
+  const total = items.reduce((a, x) => a + (x.amount || 0), 0);
+  const subject = items.length === 1 ? 'New payment request ' + pq(items[0].pqn) + ' · ' + items[0].title + ' · ' + fmt(items[0].amount) + ' EUR' : items.length + ' new payment requests · ' + fmt(total) + ' EUR';
+  const lines = [nameOf(me) + ' added ' + (items.length === 1 ? 'a new payment request' : items.length + ' new payment requests') + ' for review:'];
+  const rows = items.map((x) => [pq(x.pqn) + ' · ' + KIND[x.kind], x.title + (x.number ? ' · ' + x.number : ''), fmt(x.amount) + ' EUR']);
+  await sendMail(env, mailOf(env, [...to], subject, 'New payment request' + (items.length === 1 ? '' : 's'), lines, { label: 'Review in DAA Pay', url: appUrl(env) }, rows)).catch(() => {});
+  return json({ ok: true, emailed: true });
+}
+async function reportBug(req, env, me, b) {
+  await limit(env, 'bug:' + me.id, 10, 60 * 60e3);
+  const t = (k, n) => String(b[k] || '').trim().slice(0, n);
+  if (!t('what', 4000)) fail(400, 'Describe what went wrong.');
+  const id = rid('b'), ts = now();
+  const bug = { by: me.id, ts, time: podgoricaStamp(ts).short, status: 'open', area: t('area', 60), severity: ['blocking', 'annoying', 'cosmetic'].includes(b.severity) ? b.severity : 'annoying',
+    what: t('what', 4000), expected: t('expected', 2000), steps: t('steps', 3000), fileId: /^[0-9a-f]{32}$/.test(b.fileId || '') ? b.fileId : '', fileName: t('fileName', 200),
+    context: { version: APP_VERSION, page: t('page', 200), screen: t('screen', 40), agent: String(req.headers.get('user-agent') || '').slice(0, 300) } };
+  await putDoc(env, 'bugs', id, bug);
+  await logEvent(env, me.id, 'data', 'Reported a bug: ' + bug.what.slice(0, 80));
+  const admins = (await allDocs(env, 'users')).filter((u) => u.role === 'sa' && u.active !== false && u.email).map((u) => u.email);
+  for (const u of await allDocs(env, 'users')) if (u.role === 'sa' && u.active !== false) await putDoc(env, 'notifs', rid('n'), { to: u.id, text: nameOf(me) + ' reported a bug: ' + bug.what.slice(0, 100), ts, time: bug.time, readBy: {}, bug: id });
+  if (env.RESEND_API_KEY && admins.length) await sendMail(env, mailOf(env, admins, 'DAA Pay bug report (' + bug.severity + '): ' + bug.what.slice(0, 60), 'New bug report',
+    ['From ' + nameOf(me) + ' (' + ROLE[me.role] + '), ' + bug.time + '.'], { label: 'Open bug reports', url: appUrl(env) },
+    [['What happened', bug.what], ['Expected', bug.expected || '—'], ['Steps', bug.steps || '—'], ['Where', bug.area || bug.context.page || '—'], ['Device', bug.context.screen + ' · ' + bug.context.agent]])).catch(() => {});
+  return json({ ok: true, id });
+}
+
 // ---------------------------------------------------------------- email (Resend)
+// Shared black-and-white layout for every DAA Pay email.
+function mailOf(env, to, subject, heading, lines, button, rows) {
+  const html = '<div style="background:#F3F3F1;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;color:#111"><div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #D9D9D5;border-radius:12px;padding:28px">' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:18px"><tr><td><img src="' + appUrl(env) + '/static/icon-192.png" width="40" height="40" alt="DAA" style="display:block;border-radius:6px"></td><td style="padding-left:10px;font-weight:700;font-size:16px">DAA Pay</td></tr></table>' +
+    '<h1 style="font-size:20px;line-height:1.3;margin:0 0 12px">' + esc(heading) + '</h1>' +
+    lines.map((l) => '<p style="font-size:14px;line-height:1.55;margin:0 0 10px">' + esc(l) + '</p>').join('') +
+    (rows && rows.length ? '<table cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin:8px 0 14px;font-size:13px">' + rows.map((r) => '<tr>' + r.map((c, i) => '<td style="border-top:1px solid #E5E5E1;' + (i === r.length - 1 ? 'text-align:right;font-weight:700;white-space:nowrap' : '') + '">' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>' : '') +
+    (button ? '<p style="margin:18px 0 6px"><a href="' + esc(button.url) + '" style="display:inline-block;background:#111;color:#fff;text-decoration:none;font-weight:600;padding:12px 18px;border-radius:8px">' + esc(button.label) + '</a></p><p style="font-size:12px;color:#666;margin:6px 0 0;word-break:break-all">' + esc(button.url) + '</p>' : '') +
+    '<p style="font-size:12px;color:#666;margin:22px 0 0;border-top:1px solid #E5E5E1;padding-top:12px">DAA Montenegro d.o.o. · DAA Pay</p></div></div>';
+  const text = heading + '\n\n' + lines.join('\n\n') + (rows && rows.length ? '\n\n' + rows.map((r) => r.join(' · ')).join('\n') : '') + (button ? '\n\n' + button.label + ': ' + button.url : '') + '\n';
+  return { to, subject, html, text };
+}
 const appUrl = (env) => env.APP_URL || 'https://daa-pay.workers.dev';
 async function sendMail(env, m) {
   if (!env.RESEND_API_KEY) fail(503, 'Email is not set up yet. Add RESEND_API_KEY to the Cloudflare Worker.');

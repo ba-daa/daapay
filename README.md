@@ -48,14 +48,17 @@ Add → Custom domain → `pay.daa.co.me`. Then set `APP_URL = "https://pay.daa.
 
 ## Email
 
-Emails (payment orders to the office manager, paid confirmations, approved access, the Monday report)
-are sent through [Resend](https://resend.com):
+Emails are sent through [Resend](https://resend.com): new requests (to the CEO, Super-admin and the
+assistant's account manager), payment orders to the office manager, paid and denied notices, welcome
+and invitation emails for new accounts, access-request confirmations and approvals, password reset
+links, bug reports (to the Super-admin) and the Monday report.
 
 1. Create a Resend account, add the domain `daa.co.me`, and add the DNS records it shows (SPF/DKIM).
 2. Create an API key and add it as the `RESEND_API_KEY` repository secret; run the deploy again.
 3. The sender is `MAIL_FROM` in `wrangler.toml` (default `DAA Pay <pay@daa.co.me>`).
 
-Emails only go to people with an active DAA Pay account.
+Emails only go to people with an active DAA Pay account. Until email is set up, invitation and reset
+links are shown in Users & roles so they can be sent by hand.
 
 ## Security model
 

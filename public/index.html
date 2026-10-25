@@ -186,6 +186,7 @@ dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break:
 .navitem:hover { background: var(--soft); }
 .navitem:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 .navitem.on { background: var(--inv-bg); color: var(--inv-fg); }
+.navitem.sub { min-height: 44px; font-size: 15px; font-weight: 500; }
 .navitem.on .pill { background: var(--inv-fg); color: var(--inv-bg); }
 @media (prefers-reduced-motion: no-preference) { .navsheet { animation: slide 0.18s ease-out; } }
 .addbtn .lbl { display: inline; }
@@ -278,7 +279,8 @@ var BUYER_TIN = '02764318';
 var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
-var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log'];
+var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs'];
+var APP_VERSION = '0.2.0';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -433,6 +435,8 @@ async function init() {
   var r = await Promise.all([window.claude.use('db'), window.claude.use('assets'), window.claude.use('downloads'), window.claude.use('mcp')]);
   G.db = r[0]; G.assets = r[1]; G.downloads = r[2]; G.mcp = r[3];
   window.daa.onSignedOut(function () { if (G.me) { G.me = null; G.memId = null; setUi({ open: null, modal: null, profile: false, nav: false }); toast('You were signed out. Please sign in again.', true); } });
+  var qs = new URLSearchParams(location.search), tk = qs.get('invite') || qs.get('reset');
+  if (tk) G.tokenView = { t: tk, kind: qs.get('invite') ? 'invite' : 'reset' };
   try { var m = await window.daa.get('/api/me'); if (m.user) onSignedIn(m.user); else G.setup = !!m.setup; } catch (e) { G.err = 'DAA Pay could not reach its server. Check your connection and reload the page.'; }
   G.ready = true; redraw();
 }
@@ -758,9 +762,168 @@ function FirstRun() {
   </div></main>`;
 }
 
+// ================= SET PASSWORD (invitation / reset link) =================
+function SetPassword() {
+  var tv = G.tokenView, s = useState({ info: null, err: '', pass: '', pass2: '', busy: false, done: false }), f = s[0], set = s[1];
+  useEffect(function () { window.daa.get('/api/token?t=' + encodeURIComponent(tv.t)).then(function (r) { set(Object.assign({}, f, { info: r })); }, function (ex) { set(Object.assign({}, f, { err: ex.message })); }); }, []);
+  function leave() { try { history.replaceState(null, '', '/'); } catch (e) {} G.tokenView = null; redraw(); }
+  async function submit(e) {
+    e.preventDefault();
+    if (f.pass.length < 8) { set(Object.assign({}, f, { err: 'Choose a password of at least 8 characters.' })); return; }
+    if (f.pass !== f.pass2) { set(Object.assign({}, f, { err: 'The two passwords do not match.' })); return; }
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    try { var r = await window.daa.post('/api/token/use', { t: tv.t, pass: f.pass }); G.prefillEmail = r.email; set(Object.assign({}, f, { busy: false, done: true })); }
+    catch (ex) { set(Object.assign({}, f, { busy: false, err: ex.message })); }
+  }
+  var invite = f.info ? f.info.kind === 'invite' : tv.kind === 'invite';
+  return html`<main class="auth gut"><div class="card box">
+    <div class="row" style="gap: 14px"><${Logo} w=${46} /><div><h1 style="font-size: 22px">${invite ? 'Welcome to DAA Pay' : 'Choose a new password'}</h1><div class="muted" style="font-size: 13px; word-break: break-all">${f.info ? f.info.email : ''}</div></div></div>
+    ${f.done ? html`<div class="alert i" role="status">Your password is set. Sign in with it now${invite ? '; the Help center in the menu shows you around' : ''}.</div><button class="btn" onClick=${leave}>Go to sign in</button>`
+      : !f.info ? html`${f.err ? html`<div class="alert e" role="alert">${f.err}</div><button class="btn o" onClick=${leave}>Go to sign in</button>` : html`<div class="muted">Checking your link…</div>`}`
+      : html`<form class="stack" onSubmit=${submit}>
+        ${invite && html`<p style="margin: 0">Hello ${f.info.first}, choose the password you will use to sign in.</p>`}
+        <${Field} label="New password" req hint="At least 8 characters"><input id="sp-pass" class="inp" type="password" autocomplete="new-password" value=${f.pass} onInput=${inputOn(f, set, 'pass')} /><//>
+        <${Field} label="Repeat password" req><input id="sp-pass2" class="inp" type="password" autocomplete="new-password" value=${f.pass2} onInput=${inputOn(f, set, 'pass2')} /><//>
+        ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
+        <button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Saving…' : 'Set password'}</button>
+      </form>`}
+  </div></main>`;
+}
+
+// ================= HELP CENTER =================
+var HELP = [
+  { id: 'start', title: 'Getting started', text: [
+    'Sign in with your work email and password. The CEO and Super-admin also enter a 6-digit code from an authenticator app on their phone.',
+    'On a phone, everything is in the ☰ menu at the top right: Queue, Beneficiaries, Users & roles (for managers), your profile and Help & support. On a computer the sections are tabs in the header, and your profile is under your initials.',
+    'Add DAA Pay to your phone like an app. iPhone: open it in Safari, tap Share, then Add to Home Screen. Android: open it in Chrome, tap ⋮, then Install app or Add to Home screen.'] },
+  { id: 'invoices', title: 'Adding invoices', text: [
+    'Tap + (or Add to payment queue) and choose Upload invoices. Pick one or many PDFs or photos.',
+    'Every page is scanned for the fiscal QR code. Each QR code becomes its own item in the queue with its amount, date, supplier PIB and IKOF. Supplier name, address, invoice number, due date, bank account and items are read from the invoice text.',
+    'Check the supplier name and bank account before you submit. Corrections are saved in the beneficiary archive under the supplier’s PIB, so the next invoice from them is filled in for you.',
+    'No QR code? Enter the details by hand in the same form, or leave them and complete the item later from its preview. Invoices already in the queue are skipped.'] },
+  { id: 'requests', title: 'Refunds and payments by contract', text: [
+    'Refund request: who is refunded, how they are paid (domestic account or IBAN/SWIFT), the reason and the amount. Attach receipts.',
+    'Payment by contract: beneficiary, account, purpose, amount, JMBG or PIB, payment reference and the legal reference (contract or decision). Generate automatically makes a numbered decision reference.',
+    'Choose a beneficiary from the archive to fill in their details. New beneficiaries are saved automatically when you submit.'] },
+  { id: 'links', title: 'Clients, projects and cost estimates', text: [
+    'Every request can be linked to a client, one of that client’s projects and a cost estimate (number plus the CE file). All three are optional.',
+    'Change the links later from the request preview with Edit links. The queue filters by client and project.'] },
+  { id: 'approvals', title: 'Approvals and statuses', text: [
+    'Each request moves through To review → Approved → Approved for payment → Sent to payment → Paid. It can also be Denied with a reason, which goes to the person who added it.',
+    'Account managers approve or deny. The CEO approves for payment and sends to payment; the office manager then gets an email with the payment details and marks it Paid once executed. The person who added the request is emailed when it is paid.',
+    'An invoice can only be sent to payment once it has a bank account.'] },
+  { id: 'accounts', title: 'Bank accounts', text: [
+    'Montenegrin accounts have a 3-digit bank code, the account number and 2 last digits, for example 565-40-27. Type the short form; DAA Pay fills in the zeros (565-0000000000040-27) and shows the bank name.',
+    'Accounts printed on the invoice are read automatically. You can correct them in the upload form, in the request preview or under Beneficiaries.'] },
+  { id: 'finding', title: 'Finding and exporting', text: [
+    'Filter the queue by payment type, status, client, project and dates. Tap a column name (or use Sort on a phone) to sort.',
+    'Select several items to approve, send to payment, mark paid, remove or download them together. Download as PDF makes one file with a cover page per item followed by its documents.'] },
+  { id: 'emails', title: 'Emails and notifications', text: [
+    'The bell shows what needs you. DAA Pay also emails: reviewers when new requests arrive, the office manager when something is sent to payment, the initiator when it is denied or paid, and everyone a summary every Monday.',
+    'New people get a welcome or invitation email; people who ask for access get a confirmation and an email when they are approved.'] },
+  { id: 'account', title: 'Your account and security', text: [
+    'Profile settings: your name, position, password and two-step sign-in.',
+    'Forgot your password? Use Forgot password? on the sign-in screen, or ask the Super-admin to send you a reset link.',
+    'Lost the phone with your authenticator app? Ask the Super-admin to reset your two-step sign-in, then set it up again at your next sign-in.'] },
+  { id: 'admin', title: 'For administrators', admin: true, text: [
+    'Users & roles: approve access requests with a role, create accounts, change roles and managers, deactivate people, and send invitations or password reset links.',
+    'Create account: leave the password empty to email an invitation link (7 days). If email is not set up, DAA Pay shows the link for you to send yourself.',
+    'Bug reports, the activity log and backups are at the bottom of Users & roles. The server also keeps a daily backup for 30 days.'] }
+];
+function HelpCenter() {
+  var me = G.me, admin = me && (isTop(me.role) || me.role === 'am');
+  var qs = useState(''), q = qs[0], setQ = qs[1], os = useState(null), open = os[0], setOpen = os[1];
+  var close = function () { setUi({ help: false }); };
+  var topics = HELP.filter(function (h) { return !h.admin || admin; }).filter(function (h) { var t = q.trim().toLowerCase(); return !t || (h.title + ' ' + h.text.join(' ')).toLowerCase().indexOf(t) >= 0; });
+  var cur = open && byId(HELP, open);
+  return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) close(); }}><div class="modal" style="max-width: 680px" role="dialog" aria-modal="true" aria-labelledby="hc-title">
+    <div class="mhead">${cur && html`<button class="icon" aria-label="All topics" onClick=${function () { setOpen(null); }}>‹</button>`}<div style="flex-grow: 1"><div class="muted" style="font-size: 12px">Help & support</div><h2 id="hc-title" style="font-size: 20px">${cur ? cur.title : 'Help center'}</h2></div><button class="icon" aria-label="Close" onClick=${close}>${I.x}</button></div>
+    <div class="mbody" style="gap: 12px">
+      ${cur ? html`<div class="stack" style="gap: 12px; max-width: 65ch; font-size: 15px; line-height: 1.55">${cur.text.map(function (t, i) { return html`<p key=${i} style="margin: 0">${t}</p>`; })}</div>`
+        : html`<label><span class="sr">Search help</span><input id="hc-q" class="inp" type="search" placeholder="Search help, e.g. bank account, password, PDF" value=${q} onInput=${function (e) { setQ(e.target.value); }} /></label>
+          <div class="stack" style="gap: 6px">${topics.map(function (h) { return html`<button key=${h.id} class="choice" style="padding: 14px 16px; flex-direction: column; gap: 2px" onClick=${function () { setOpen(h.id); }}><b style="font-size: 15px">${h.title}</b><span class="muted" style="font-size: 13px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical">${h.text[0]}</span></button>`; })}
+            ${!topics.length && html`<div class="empty">No help topic matches. Try another word, or report it below.</div>`}</div>`}
+      <div class="row" style="justify-content: space-between; border-top: 1px solid var(--line-2); padding-top: 12px; font-size: 13px"><span class="muted">Still stuck, or something looks wrong?</span><button class="btn o sm" onClick=${function () { setUi({ help: false, bug: true }); }}>Report a bug</button></div>
+      <div class="muted" style="font-size: 12px">DAA Pay ${APP_VERSION}</div>
+    </div></div></div>`;
+}
+
+// ================= REPORT A BUG =================
+var BUG_AREAS = ['Queue and filters', 'Adding invoices', 'Refund or contract form', 'Request preview', 'Approvals and payment', 'Beneficiaries', 'Users & roles', 'Sign-in and account', 'Emails', 'PDF download', 'Other'];
+function ReportBug() {
+  var s = useState({ area: G.ui.tab === 'users' ? 'Users & roles' : G.ui.tab === 'bens' ? 'Beneficiaries' : G.ui.open ? 'Request preview' : 'Queue and filters', severity: 'annoying', what: '', expected: '', steps: '', file: null, err: '', busy: false, sent: false }), f = s[0], set = s[1];
+  var close = function () { setUi({ bug: false }); };
+  async function send(e) {
+    e.preventDefault();
+    if (!f.what.trim()) { set(Object.assign({}, f, { err: 'Describe what went wrong.' })); return; }
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    try {
+      var fileId = '', fileName = '';
+      if (f.file) { fileId = await uploadFile(f.file); fileName = f.file.name; }
+      await window.daa.post('/api/bug', { area: f.area, severity: f.severity, what: f.what, expected: f.expected, steps: f.steps, fileId: fileId, fileName: fileName, page: G.ui.tab + (G.ui.open ? ' · preview' : ''), screen: window.innerWidth + '×' + window.innerHeight });
+      set(Object.assign({}, f, { busy: false, sent: true }));
+    } catch (ex) { set(Object.assign({}, f, { busy: false, err: ex.message })); }
+  }
+  var sev = [['blocking', 'It blocks my work'], ['annoying', 'Annoying, but I can work'], ['cosmetic', 'Looks wrong']];
+  return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) close(); }}><div class="modal" style="max-width: 600px" role="dialog" aria-modal="true" aria-labelledby="rb-title">
+    <div class="mhead"><div style="flex-grow: 1"><div class="muted" style="font-size: 12px">Help & support</div><h2 id="rb-title" style="font-size: 20px">Report a bug</h2></div><button class="icon" aria-label="Close" onClick=${close}>${I.x}</button></div>
+    ${f.sent ? html`<div class="mbody"><div class="alert i" role="status"><b>Thank you, your report is sent.</b> The Super-admin sees it in Users & roles and gets an email. You may be contacted for details.</div><button class="btn" style="align-self: flex-start" onClick=${close}>Close</button></div>`
+      : html`<form class="mbody" onSubmit=${send}>
+        <${Field} label="Where did it happen?"><select id="rb-area" class="inp" value=${f.area} onChange=${inputOn(f, set, 'area')}>${BUG_AREAS.map(function (a) { return html`<option value=${a}>${a}</option>`; })}</select><//>
+        <fieldset style="border: 0; margin: 0; padding: 0" class="stack"><legend style="padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 500">How bad is it?</legend>
+          <div class="row">${sev.map(function (x) { return html`<label key=${x[0]} class=${'seg' + (f.severity === x[0] ? ' on' : '')}><input type="radio" name="sev" checked=${f.severity === x[0]} onChange=${function () { set(Object.assign({}, f, { severity: x[0] })); }} /> ${x[1]}</label>`; })}</div></fieldset>
+        <${Field} label="What happened?" req><textarea id="rb-what" class="inp" rows="3" value=${f.what} onInput=${inputOn(f, set, 'what')}></textarea><//>
+        <${Field} label="What did you expect instead?"><textarea id="rb-exp" class="inp" rows="2" value=${f.expected} onInput=${inputOn(f, set, 'expected')}></textarea><//>
+        <${Field} label="Steps to make it happen again" hint="For example: 1. Open a refund 2. Tap Approve 3. …"><textarea id="rb-steps" class="inp" rows="3" value=${f.steps} onInput=${inputOn(f, set, 'steps')}></textarea><//>
+        <div class="stack" style="gap: 6px"><label class="btn q" style="align-self: flex-start; cursor: pointer">${I.clip} ${f.file ? 'Change screenshot' : 'Add a screenshot (optional)'}<input class="sr" type="file" accept="image/*" onChange=${function (e) { set(Object.assign({}, f, { file: (e.target.files || [])[0] || null })); }} /></label>${f.file && html`<div class="filebox" style="font-size: 13px">${f.file.name}</div>`}</div>
+        <div class="muted" style="font-size: 12px">Your name, the page you were on, your screen size and browser are added automatically.</div>
+        ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
+        <div class="row" style="justify-content: flex-end"><button class="btn q" type="button" onClick=${close}>Cancel</button><button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Sending…' : 'Send report'}</button></div>
+      </form>`}
+  </div></div>`;
+}
+function BugReports() {
+  var fs = useState('open'), flt = fs[0], setFlt = fs[1];
+  var all = G.data.bugs.slice().sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  var rows = all.filter(function (b) { return flt === 'all' || (b.status || 'open') === flt; });
+  var sevLabel = { blocking: 'Blocks work', annoying: 'Annoying', cosmetic: 'Cosmetic' };
+  return html`<section class="card" aria-label="Bug reports" style="overflow: hidden">
+    <div class="pad row" style="justify-content: space-between; border-bottom: 1px solid var(--line)">
+      <div><h2 style="font-size: 17px">Bug reports</h2><div class="muted" style="font-size: 13px">Sent from Help & support · Report a bug.</div></div>
+      <div class="row">${[['open', 'Open'], ['fixed', 'Fixed'], ['all', 'All']].map(function (x) { var n = x[0] === 'all' ? all.length : all.filter(function (b) { return (b.status || 'open') === x[0]; }).length; return html`<button key=${x[0]} class=${'chip' + (flt === x[0] ? ' on' : '')} aria-pressed=${flt === x[0]} onClick=${function () { setFlt(x[0]); }}>${x[1]} <span style="opacity: 0.7">${n}</span></button>`; })}</div>
+    </div>
+    ${rows.map(function (b) { return html`<div key=${b.id} class="pad stack" style="gap: 6px; border-bottom: 1px solid var(--line-2)">
+      <div class="row" style="justify-content: space-between"><div><b>${b.what.length > 90 ? b.what.slice(0, 90) + '…' : b.what}</b><div class="muted" style="font-size: 12px">${b.time} · ${userName(b.by)} · ${b.area || '—'}</div></div>
+        <div class="row"><span class=${'badge ' + (b.severity === 'blocking' ? 's5' : b.severity === 'cosmetic' ? 's1' : 's2')}>${sevLabel[b.severity] || b.severity}</span>
+          <button class="btn q sm" onClick=${function () { patch('bugs', b.id, { status: (b.status || 'open') === 'open' ? 'fixed' : 'open' }); }}>${(b.status || 'open') === 'open' ? 'Mark fixed' : 'Reopen'}</button></div></div>
+      ${b.what.length > 90 && html`<div style="font-size: 13px; white-space: pre-line">${b.what}</div>`}
+      ${b.expected && html`<div style="font-size: 13px"><span class="muted">Expected: </span>${b.expected}</div>`}
+      ${b.steps && html`<div style="font-size: 13px; white-space: pre-line"><span class="muted">Steps: </span>${b.steps}</div>`}
+      <div class="muted" style="font-size: 12px; word-break: break-word">${b.context ? 'Page: ' + (b.context.page || '—') + ' · Screen: ' + (b.context.screen || '—') + ' · DAA Pay ' + (b.context.version || '') + ' · ' + (b.context.agent || '') : ''}${b.fileId ? html` · <a href=${'/_blob/' + b.fileId} target="_blank" rel="noopener">Screenshot</a>` : ''}${b.statusAt ? ' · ' + (b.status === 'fixed' ? 'Fixed ' : 'Reopened ') + b.statusAt + ' by ' + userName(b.statusBy) : ''}</div>
+    </div>`; })}
+    ${!rows.length && html`<div class="empty">${flt === 'open' ? 'No open bug reports.' : 'Nothing here.'}</div>`}
+  </section>`;
+}
+
 // ================= AUTH =================
 function Login(p) {
-  var s = useState({ email: '', pass: '', err: '', busy: false, step: 'pw', setup: null, code: '' }), f = s[0], set = s[1];
+  var s = useState({ email: G.prefillEmail || '', pass: '', err: '', busy: false, step: 'pw', setup: null, code: '', info: '' }), f = s[0], set = s[1];
+  async function sendReset(e) {
+    e.preventDefault();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) { set(Object.assign({}, f, { err: 'Enter the email you sign in with.' })); return; }
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    try { var r = await window.daa.post('/api/reset/request', { email: f.email.trim() }); set(Object.assign({}, f, { busy: false, info: r.emailOn ? 'If an account exists for ' + f.email.trim() + ', a link to choose a new password is on its way. It works for 24 hours.' : 'Email is not set up yet, so DAA Pay cannot send the link. Ask the Super-admin to send you a password reset link from Users & roles.' })); }
+    catch (ex) { set(Object.assign({}, f, { busy: false, err: ex.message })); }
+  }
+  if (f.step === 'forgot') return html`<main class="auth gut"><div class="card box">
+    <div class="row" style="gap: 14px"><${Logo} w=${46} /><div><h1 style="font-size: 22px">Forgot password</h1><div class="muted" style="font-size: 13px">We email you a link to choose a new one.</div></div></div>
+    ${f.info ? html`<div class="alert i" role="status">${f.info}</div>` : html`<form class="stack" onSubmit=${sendReset}>
+      <${Field} label="Email"><input id="forgot-email" class="inp" type="email" autocomplete="username" value=${f.email} onInput=${inputOn(f, set, 'email')} /><//>
+      ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
+      <button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Sending…' : 'Send me a link'}</button>
+    </form>`}
+    <button class="link" type="button" style="align-self: center" onClick=${function () { set(Object.assign({}, f, { step: 'pw', err: '', info: '' })); }}>Back to sign in</button>
+  </div></main>`;
   async function submit(e) {
     e.preventDefault();
     var em = f.email.trim().toLowerCase();
@@ -808,6 +971,7 @@ function Login(p) {
       <${Field} label="Password"><input id="login-pass" class="inp" type="password" autocomplete="current-password" value=${f.pass} onInput=${inputOn(f, set, 'pass')} /><//>
       ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
       <button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Signing in…' : 'Sign in'}</button>
+      <button class="link" type="button" style="align-self: center; font-weight: 500; font-size: 13px" onClick=${function () { set(Object.assign({}, f, { step: 'forgot', err: '', info: '' })); }}>Forgot password?</button>
     </form>
     <div class="row" style="justify-content: center; border-top: 1px solid var(--line-2); padding-top: 12px; font-size: 13px"><span class="muted">No account yet?</span><button class="link" type="button" onClick=${p.onRegister}>Request access</button></div>
     <button class="link" type="button" style="align-self: center; font-weight: 500; font-size: 13px" onClick=${function () { setUi({ privacy: true }); }}>Privacy & data</button>
@@ -872,13 +1036,13 @@ function Header() {
         <div style="max-height: 380px; overflow-y: auto">
           ${mine.length ? mine.slice(0, 60).map(function (n) {
             var rd = (n.readBy || {})[me.id];
-            return html`<button key=${n.id} style=${'all: unset; box-sizing: border-box; width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); cursor: pointer;' + (rd ? '' : ' background: var(--soft); box-shadow: inset 3px 0 0 var(--ink);')} onClick=${function () { markRead([n]); setUi(n.reg ? { tab: 'users', bell: false, open: null } : { tab: 'queue', bell: false, open: n.itemId || null }); }}><span style="font-size: 13px">${n.text}</span><span class="muted" style="font-size: 12px">${n.time}</span></button>`;
+            return html`<button key=${n.id} style=${'all: unset; box-sizing: border-box; width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); cursor: pointer;' + (rd ? '' : ' background: var(--soft); box-shadow: inset 3px 0 0 var(--ink);')} onClick=${function () { markRead([n]); setUi(n.reg || n.bug ? { tab: 'users', bell: false, open: null } : { tab: 'queue', bell: false, open: n.itemId || null }); }}><span style="font-size: 13px">${n.text}</span><span class="muted" style="font-size: 12px">${n.time}</span></button>`;
           }) : html`<div class="empty" style="padding: 24px">You're all caught up.</div>`}
         </div></div>`}
     </div>
     <div class="acctw" style="position: relative">
       <button class="acct" aria-expanded=${G.ui.menu} aria-label="Account menu" onClick=${function () { setUi({ menu: !G.ui.menu, bell: false }); }}><span class="av" aria-hidden="true">${initials(me)}</span><span class="t"><b style="font-size: 13px">${nameOf(me)}</b><span class="muted" style="font-size: 11px">${ROLE[role]}</span></span></button>
-      ${G.ui.menu && html`<div class="pop" style="width: 220px; padding: 6px"><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ profile: true, menu: false }); }}>Profile settings</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ privacy: true, menu: false }); }}>Privacy & data</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${signOut}>Sign out</button></div>`}
+      ${G.ui.menu && html`<div class="pop" style="width: 220px; padding: 6px"><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ profile: true, menu: false }); }}>Profile settings</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ privacy: true, menu: false }); }}>Privacy & data</button><div class="muted" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 12px 2px; border-top: 1px solid var(--line-2); margin-top: 4px">Help & support</div><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ help: true, menu: false }); }}>Help center</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ bug: true, menu: false }); }}>Report a bug</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${signOut}>Sign out</button></div>`}
     </div>
     <button class="icon burger" aria-label="Open menu" aria-expanded=${!!G.ui.nav} aria-controls="navsheet" onClick=${function () { setUi({ nav: true, bell: false, menu: false }); }}>${I.menu}</button>
   </div></header>
@@ -896,7 +1060,12 @@ function Header() {
       </div>
       <div class="stack" style="gap: 4px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line-2)">
         <button class="navitem" onClick=${function () { setUi({ nav: false, profile: true }); }}>Profile settings</button>
-        <button class="navitem" onClick=${function () { setUi({ nav: false, privacy: true }); }}>Privacy & data</button>
+        <button class="navitem" aria-expanded=${!!G.ui.helpOpen} onClick=${function () { setUi({ helpOpen: !G.ui.helpOpen }); }}>Help & support<span aria-hidden="true" style="margin-left: auto; font-size: 13px">${G.ui.helpOpen ? '▾' : '▸'}</span></button>
+        ${G.ui.helpOpen && html`<div class="stack" style="gap: 2px; padding-left: 14px; border-left: 2px solid var(--line); margin-left: 14px">
+          <button class="navitem sub" onClick=${function () { setUi({ nav: false, help: true }); }}>Help center</button>
+          <button class="navitem sub" onClick=${function () { setUi({ nav: false, bug: true }); }}>Report a bug</button>
+          <button class="navitem sub" onClick=${function () { setUi({ nav: false, privacy: true }); }}>Privacy & data</button>
+        </div>`}
         <button class="navitem" onClick=${signOut}>Sign out</button>
       </div>
     </nav>
@@ -1539,6 +1708,7 @@ function AddModal() {
       }
       var ids = [];
       for (var c = 0; c < created.length; c++) { var id = uid('i'); ids.push(id); await put('items', id, Object.assign(created[c], { pqn: pq + c })); }
+      window.daa.post('/api/notify/new', { ids: ids }).catch(function () {});
       notify(created.map(function (it, n) { return { to: 'role:review', from: me.id, itemId: ids[n], text: nameOf(me) + ' added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; }));
       if (me.role === 'aa') {
         var mgrs = me.managerId ? [me.managerId] : G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; }).map(function (u) { return u.id; });
@@ -1653,6 +1823,15 @@ function Users() {
   var ns = useState({ first: '', last: '', position: '', email: '', role: roles[roles.length > 2 ? 2 : 0] || 'aa', pass: '', err: '' }), nu = ns[0], setNu = ns[1];
   var rr = useState({}), regRole = rr[0], setRegRole = rr[1];
   var ams = G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; });
+  var ls = useState(null), linkBox = ls[0], setLinkBox = ls[1];
+  function linkResult(r, email, kind) {
+    if (r.emailed) { toast({ invite: 'Invitation emailed to ', reset: 'Password reset link emailed to ', welcome: 'Account created. Welcome email sent to ' }[kind] + email + '.'); setLinkBox(null); }
+    else if (r.link) setLinkBox({ email: email, link: r.link, kind: kind, why: (r.emailError || 'Email is not set up yet').replace(/\.+$/, '') });
+    else toast('Account created for ' + email + '.');
+  }
+  async function sendLink(u) {
+    try { var r = await window.daa.post('/api/users/invite', { id: u.id }); linkResult(r, u.email, r.kind); } catch (ex) { toast(ex.message, true); }
+  }
   async function approve(r) {
     var rl = regRole[r.id] || r.role || 'aa';
     if (roles.indexOf(rl) < 0) rl = 'aa';
@@ -1665,11 +1844,11 @@ function Users() {
     if (!nu.first.trim() || !nu.last.trim() || !nu.position.trim()) { setNu(Object.assign({}, nu, { err: 'Add first name, last name and position.' })); return; }
     if (!/@daa\.co\.me$/.test(em)) { setNu(Object.assign({}, nu, { err: 'Use a @daa.co.me email address.' })); return; }
     if (G.data.users.some(function (u) { return (u.email || '').toLowerCase() === em; })) { setNu(Object.assign({}, nu, { err: 'An account with this email already exists.' })); return; }
-    if (nu.pass.length < 8) { setNu(Object.assign({}, nu, { err: 'Set a starting password of at least 8 characters. They can change it in Profile settings.' })); return; }
+    if (nu.pass && nu.pass.length < 8) { setNu(Object.assign({}, nu, { err: 'A starting password needs at least 8 characters, or leave it empty to send an invitation.' })); return; }
     var rl = roles.indexOf(nu.role) >= 0 ? nu.role : roles[0];
     try {
-      await window.daa.post('/api/users/create', { first: nu.first, last: nu.last, position: nu.position, email: em, role: rl, managerId: nu.managerId || '', pass: nu.pass });
-      toast('Account created for ' + em + '.'); setNu({ first: '', last: '', position: '', email: '', role: rl, pass: '', err: '' });
+      var cr = await window.daa.post('/api/users/create', { first: nu.first, last: nu.last, position: nu.position, email: em, role: rl, managerId: nu.managerId || '', pass: nu.pass });
+      linkResult(cr, em, nu.pass ? 'welcome' : 'invite'); setNu({ first: '', last: '', position: '', email: '', role: rl, pass: '', err: '' });
     } catch (ex) { setNu(Object.assign({}, nu, { err: ex.message })); }
   }
   var matrix = [['See all payment requests', [1, 1, 0, 0, 1]], ['See their assistants\u2019 requests', [1, 1, 1, 0, 1]], ['Add invoices and payment requests', [1, 1, 1, 1, 1]], ['Approve document', [1, 1, 1, 0, 0]], ['Deny with reason', [1, 1, 1, 0, 0]], ['Approve for payment', [1, 1, 0, 0, 0]], ['Send to payment', [1, 1, 0, 0, 0]], ['Receive payments to execute', [0, 0, 0, 0, 1]], ['Mark as paid', [1, 1, 0, 0, 1]], ['Approve access requests', [1, 1, 1, 0, 0]], ['Create accounts', ['All', 'All', 'Assistants', 0, 0]], ['Change roles, deactivate', [1, 1, 0, 0, 0]]];
@@ -1689,7 +1868,8 @@ function Users() {
           var ed = top && u.id !== me.id;
           return html`<div key=${u.id} class="row pad" style="border-bottom: 1px solid var(--line-2); padding-block: 12px; ${u.active === false ? 'opacity: 0.6' : ''}">
             <span class="av l" aria-hidden="true">${initials(u)}</span>
-            <div style="flex: 1 1 200px; min-width: 0"><b>${nameOf(u)}</b>${u.active === false ? html` <span class="badge s5">Deactivated</span>` : ''}<div class="muted" style="font-size: 12px; word-break: break-all">${u.position} · ${u.email}${has2fa(u) ? ' · 2-step on' : needs2fa(u) ? ' · 2-step pending' : ''}</div></div>
+            <div style="flex: 1 1 200px; min-width: 0"><b>${nameOf(u)}</b>${u.active === false ? html` <span class="badge s5">Deactivated</span>` : ''}${u.pending ? html` <span class="badge s1">Invitation pending</span>` : ''}<div class="muted" style="font-size: 12px; word-break: break-all">${u.position} · ${u.email}${has2fa(u) ? ' · 2-step on' : needs2fa(u) ? ' · 2-step pending' : ''}</div></div>
+            ${u.id !== me.id && u.active !== false && (top || (role === 'am' && u.role === 'aa')) && html`<button class="btn q sm" onClick=${function () { sendLink(u); }}>${u.pending ? 'Send invitation again' : 'Send password reset'}</button>`}
             ${top && u.id !== me.id && has2fa(u) && html`<button class="btn q sm" onClick=${function () { patch('users', u.id, { totp: { on: false, secret: '' } }).then(function (r) { if (r) { logEv('security', 'Reset two-step sign-in for ' + nameOf(u)); toast('Two-step sign-in reset for ' + nameOf(u) + '. They set it up again at next sign-in.'); } }); }}>Reset 2-step</button>`}
             ${u.role === 'aa' && html`<label class="row" style="font-size: 13px; gap: 6px">Manager ${top ? html`<select class="inp" style="width: auto" aria-label=${'Account manager for ' + nameOf(u)} value=${u.managerId || ''} onChange=${function (e) { patch('users', u.id, { managerId: e.target.value }); }}><option value="">Not assigned</option>${ams.map(function (m) { return html`<option value=${m.id}>${nameOf(m)}</option>`; })}</select>` : html`<b>${u.managerId ? userName(u.managerId) : 'Not assigned'}</b>`}</label>`}
             ${ed ? html`<select class="inp" style="width: auto" aria-label=${'Role for ' + nameOf(u)} value=${u.role} onChange=${function (e) { var v = e.target.value; patch('users', u.id, { role: v }).then(function (r) { if (r) logEv('users', 'Role of ' + nameOf(u) + ' changed to ' + ROLE[v]); }); }}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select>
@@ -1705,7 +1885,7 @@ function Users() {
             <${Field} label="Email"><input id="nu-email" class="inp" type="email" placeholder="name@daa.co.me" value=${nu.email} onInput=${inputOn(nu, setNu, 'email')} /><//>
             <${Field} label="Role"><select id="nu-role" class="inp" value=${nu.role} onChange=${inputOn(nu, setNu, 'role')}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select><//>
             ${top && nu.role === 'aa' && html`<${Field} label="Account manager"><select id="nu-mgr" class="inp" value=${nu.managerId || ''} onChange=${inputOn(nu, setNu, 'managerId')}><option value="">Not assigned</option>${ams.map(function (m) { return html`<option value=${m.id}>${nameOf(m)}</option>`; })}</select><//>`}
-            <${Field} label="Starting password" hint="Give it to them; they change it in Profile settings."><input id="nu-pass" class="inp" type="text" autocomplete="off" value=${nu.pass} onInput=${inputOn(nu, setNu, 'pass')} /><//>
+            <${Field} label="Starting password (optional)" hint="Leave empty to email an invitation link; they choose their own password."><input id="nu-pass" class="inp" type="text" autocomplete="off" value=${nu.pass} onInput=${inputOn(nu, setNu, 'pass')} /><//>
           </div>
           ${nu.err && html`<div class="alert e" role="alert">${nu.err}</div>`}
           <button class="btn" type="submit" style="align-self: flex-start">Create account</button>
@@ -1718,6 +1898,8 @@ function Users() {
         <p class="muted" style="margin: 0; padding: 14px 20px; font-size: 12px; border-top: 1px solid var(--line-2)">Account managers see their own requests and their assistants’; assistants see only their own. Assistants with no manager assigned are visible to every account manager. The office manager, CEO and Super-admin see all requests.</p>
       </section>
     </div>
+    ${linkBox && html`<div class="alert i stack" role="status" style="gap: 8px"><span><b>${linkBox.why}.</b> Send this ${linkBox.kind === 'reset' ? 'password reset' : 'invitation'} link to ${linkBox.email} yourself (it works for ${linkBox.kind === 'reset' ? '24 hours' : '7 days'}):</span><span class="mono" style="word-break: break-all; user-select: all; font-size: 13px">${linkBox.link}</span><div class="row"><button class="btn sm" onClick=${function () { try { navigator.clipboard.writeText(linkBox.link).then(function () { toast('Link copied.'); }); } catch (e) {} }}>Copy link</button><button class="btn q sm" onClick=${function () { setLinkBox(null); }}>Done</button></div></div>`}
+    ${top && html`<${BugReports} />`}
     ${top && html`<${ActivityLog} />`}
     ${top && html`<${Backups} />`}
   </main>`;
@@ -1941,18 +2123,19 @@ function App() {
   var t = useState(0); G.tick = function () { t[1](function (n) { return n + 1; }); };
   var a = useState('login'), authView = a[0], setAuth = a[1];
   useEffect(function () {
-    var k = function (e) { if (e.key === 'Escape') { if (G.ui.privacy) setUi({ privacy: false }); else if (G.ui.nav) setUi({ nav: false }); else if (G.ui.modal) setUi({ modal: null }); else if (G.ui.profile) setUi({ profile: false }); else if (G.ui.open) setUi({ open: null }); else if (G.ui.bell || G.ui.menu) setUi({ bell: false, menu: false }); } };
+    var k = function (e) { if (e.key === 'Escape') { if (G.ui.help || G.ui.bug) setUi({ help: false, bug: false }); else if (G.ui.privacy) setUi({ privacy: false }); else if (G.ui.nav) setUi({ nav: false }); else if (G.ui.modal) setUi({ modal: null }); else if (G.ui.profile) setUi({ profile: false }); else if (G.ui.open) setUi({ open: null }); else if (G.ui.bell || G.ui.menu) setUi({ bell: false, menu: false }); } };
     document.addEventListener('keydown', k); return function () { document.removeEventListener('keydown', k); };
   }, []);
   var body;
   if (G.noDb) body = html`<main class="auth gut"><div class="card box"><${Logo} w=${46} /><h1 style="font-size: 20px">The database is not available here</h1><p class="muted" style="margin: 0">Open this page from its claude.ai link while signed in to your DAA organization account.</p></div></main>`;
   else if (!G.ready) body = html`<main class="auth gut"><div class="muted">Connecting to the database…</div></main>`;
+  else if (G.tokenView) body = html`<${SetPassword} />`;
   else if (!G.me && G.setup) body = html`<${FirstRun} />`;
   else if (!G.me) body = authView === 'login' ? html`<${Login} onRegister=${function () { setAuth('register'); }} />` : html`<${Register} onLogin=${function () { setAuth('login'); }} />`;
   else if (!G.dataReady) body = html`<main class="auth gut"><div class="muted">Loading your payment queue…</div></main>`;
   else body = html`<${Header} />${G.ui.tab === 'users' && (isTop(G.me.role) || G.me.role === 'am') ? html`<${Users} />` : G.ui.tab === 'bens' ? html`<${Beneficiaries} />` : html`<${Queue} />`}
     ${G.ui.open && html`<${Drawer} key=${G.ui.open} />`}${G.ui.modal && html`<${AddModal} key=${G.ui.modal} />`}${G.ui.profile && html`<${Profile} />`}`;
-  return html`${G.err && html`<div class="alert e gut" role="alert" style="border-radius: 0">${G.err}</div>`}${body}${G.ui.privacy && html`<${Privacy} />`}${G.ui.toast && html`<div class=${'toast' + (G.ui.toast.bad ? ' e' : '')} role="status">${G.ui.toast.text}</div>`}`;
+  return html`${G.err && html`<div class="alert e gut" role="alert" style="border-radius: 0">${G.err}</div>`}${body}${G.ui.privacy && html`<${Privacy} />`}${G.ui.help && html`<${HelpCenter} />`}${G.ui.bug && html`<${ReportBug} />`}${G.ui.toast && html`<div class=${'toast' + (G.ui.toast.bad ? ' e' : '')} role="status">${G.ui.toast.text}</div>`}`;
 }
 var root = document.getElementById('app');
 root.textContent = '';
