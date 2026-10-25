@@ -1,0 +1,32 @@
+# DAA Pay — Cloudflare Worker with static assets, D1 database and R2 file storage.
+# The GitHub Actions workflow creates the database and bucket on first deploy and fills in database_id.
+name = "daa-pay"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "daa-pay"
+database_id = "__D1_DATABASE_ID__"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "daa-pay-files"
+
+[triggers]
+# Monday 06:37 UTC = 07:37 in Podgorica in winter (08:37 in summer): weekly report.
+# Daily 02:15 UTC: backup to R2 (kept 30 days) and clean-up.
+crons = ["37 6 * * 1", "15 2 * * *"]
+
+[vars]
+MAIL_FROM = "DAA Pay <pay@daa.co.me>"
+# Set APP_URL to the public address once known, e.g. https://pay.daa.co.me
+APP_URL = ""
+
+[observability]
+enabled = true

@@ -1,0 +1,1965 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="DAA Pay">
+<link rel="icon" type="image/png" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>DAA Pay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+html, body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+/* Layout: one working screen — header band, filter panel, full-width ledger table; preview slides in from the right. Black on white, like a bank statement. */
+:root {
+  --bg: #F3F3F1; --surface: #FFFFFF; --ink: #111111; --ink-2: #3B3B39; --muted: #5C5C58;
+  --line: #D9D9D5; --line-2: #EAEAE6; --field: #B9B9B4; --soft: #ECECE8; --s2: #D3D3CE; --s3: #4A4A47;
+  --inv-bg: #111111; --inv-fg: #FFFFFF; --danger: #B42318; --danger-bg: #FDECEA; --danger-ink: #8A1C12;
+  --scrim: rgba(17, 17, 17, 0.45); --logo-filter: none;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121211; --surface: #1B1B1A; --ink: #F2F2EF; --ink-2: #D0D0CB; --muted: #A2A29C;
+  --line: #34342F; --line-2: #2A2A26; --field: #55554F; --soft: #272724; --s2: #3B3B37; --s3: #BDBDB7;
+  --inv-bg: #F2F2EF; --inv-fg: #111111; --danger: #FF8A80; --danger-bg: #3A1714; --danger-ink: #FFB4AB;
+  --scrim: rgba(0, 0, 0, 0.6); --logo-filter: invert(1); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121211; --surface: #1B1B1A; --ink: #F2F2EF; --ink-2: #D0D0CB; --muted: #A2A29C;
+  --line: #34342F; --line-2: #2A2A26; --field: #55554F; --soft: #272724; --s2: #3B3B37; --s3: #BDBDB7;
+  --inv-bg: #F2F2EF; --inv-fg: #111111; --danger: #FF8A80; --danger-bg: #3A1714; --danger-ink: #FFB4AB;
+  --scrim: rgba(0, 0, 0, 0.6); --logo-filter: invert(1); color-scheme: dark }
+
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--ink); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.2; }
+.gut { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1440px; margin: 0 auto; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); }
+.num { font-variant-numeric: tabular-nums; }
+.logo { display: block; filter: var(--logo-filter); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--inv-bg); background: var(--inv-bg); color: var(--inv-fg); font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; }
+.btn.o { background: var(--surface); color: var(--ink); border-color: var(--ink); }
+.btn.q { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 500; }
+.btn.d { background: var(--danger); border-color: var(--danger); color: #FFFFFF; }
+.btn.do { background: var(--surface); border-color: var(--danger); color: var(--danger); }
+.btn.sm { min-height: 40px; padding: 0 12px; font-size: 13px; }
+.btn.done { background: var(--soft); border-color: var(--soft); color: var(--ink); cursor: default; }
+.btn:disabled { background: transparent; border-color: var(--line); color: var(--muted); cursor: not-allowed; }
+.icon { width: 44px; height: 44px; padding: 0; border: 0; background: transparent; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink); }
+.link { background: none; border: 0; padding: 0 4px; min-height: 44px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; color: var(--ink); }
+
+.fld { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 13px; font-weight: 500; }
+.fld.wide { grid-column: 1 / -1; }
+.fld .hint { font-weight: 400; font-size: 12px; color: var(--muted); }
+.req { color: var(--danger); font-weight: 500; }
+.inp { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--field); border-radius: 8px; background: var(--surface); color: var(--ink); font-weight: 400; font-size: 14px; }
+textarea.inp { resize: vertical; }
+input[type="date"].inp { min-width: 0; max-width: 100%; display: block; }
+/* iPhone/iPad Safari: date fields keep a built-in minimum width unless the native look is turned off */
+@supports (-webkit-touch-callout: none) {
+  input[type="date"].inp { -webkit-appearance: none; appearance: none; width: 100%; min-height: 44px; line-height: 24px; }
+  input[type="date"].inp::-webkit-date-and-time-value { text-align: left; min-height: 24px; }
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--field); background: var(--surface); cursor: pointer; }
+.seg.on { border: 1.5px solid var(--ink); background: var(--soft); font-weight: 600; }
+.seg input { accent-color: var(--ink); }
+.chip { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--field); background: var(--surface); cursor: pointer; font-size: 13px; }
+.chip.on { background: var(--inv-bg); border-color: var(--inv-bg); color: var(--inv-fg); font-weight: 600; }
+.alert { padding: 10px 14px; border-radius: 10px; font-size: 13px; }
+.alert.e { background: var(--danger-bg); color: var(--danger-ink); }
+.alert.i { background: var(--soft); color: var(--ink); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.pad { padding: 16px 20px; }
+.ck { width: 18px; height: 18px; accent-color: var(--ink); margin: 0; }
+
+.badge { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; border: 1px solid transparent; }
+.s0 { border-color: var(--ink); color: var(--ink); }
+.s1 { background: var(--soft); }
+.s2 { background: var(--s2); }
+.s3 { background: var(--s3); color: var(--bg); }
+.s4 { background: var(--inv-bg); color: var(--inv-fg); }
+.s5 { border: 1px dashed var(--danger); color: var(--danger); }
+
+header.top { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 15; }
+header.top .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding-block: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand b { display: block; font-size: 16px; }
+.brand small { display: block; font-size: 12px; color: var(--muted); }
+nav.tabs { display: flex; gap: 4px; flex-grow: 1; }
+.tab { min-height: 44px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-2); font-weight: 600; cursor: pointer; }
+.tab.on { background: var(--inv-bg); color: var(--inv-fg); }
+.pill { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--inv-bg); color: var(--inv-fg); font-size: 11px; line-height: 18px; text-align: center; }
+.tab.on .pill { background: var(--inv-fg); color: var(--inv-bg); }
+.pop { position: absolute; right: 0; top: 52px; width: 360px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16); overflow: hidden; z-index: 20; }
+.dot { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--inv-bg); color: var(--inv-fg); border: 2px solid var(--surface); font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
+.av { width: 34px; height: 34px; border-radius: 999px; background: var(--inv-bg); color: var(--inv-fg); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: 0 0 auto; }
+.av.l { background: var(--soft); color: var(--ink); }
+.acct { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px 0 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); cursor: pointer; }
+.acct span.t { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; text-align: left; }
+
+main.page { padding-block: 24px; display: flex; flex-direction: column; gap: 16px; }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 26px; padding-top: 12px; border-top: 1px solid var(--line-2); font-size: 13px; }
+.bulk { background: var(--inv-bg); color: var(--inv-fg); border-radius: 12px; padding: 10px 12px 10px 20px; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.bulk .btn { background: var(--inv-fg); color: var(--inv-bg); border-color: var(--inv-fg); }
+.bulk .btn.ol { background: transparent; color: var(--inv-fg); border-color: var(--inv-fg); }
+.bulk .btn.rm { background: transparent; color: var(--inv-fg); border-color: var(--danger); }
+.bulk .btn:disabled { background: transparent; color: var(--muted); border-color: var(--muted); }
+.scroll { overflow-x: auto; position: relative; }
+table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.t th { text-align: left; font-weight: 600; color: var(--ink); background: var(--bg); padding: 4px 12px; white-space: nowrap; }
+table.t td { padding: 10px 12px; border-top: 1px solid var(--line-2); vertical-align: middle; }
+table.t tr.sel td { background: var(--soft); }
+table.t .r { text-align: right; }
+.sortb { all: unset; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; cursor: pointer; }
+.sortb:focus-visible { outline: 2px solid var(--ink); }
+.ar { font-size: 10px; color: var(--muted); }
+.ar.on { color: var(--ink); }
+.namebtn { all: unset; display: flex; flex-direction: column; min-height: 44px; justify-content: center; cursor: pointer; }
+.namebtn b { text-decoration: underline; text-underline-offset: 3px; }
+.namebtn:focus-visible { outline: 2px solid var(--ink); }
+.empty { padding: 36px 20px; text-align: center; color: var(--muted); }
+
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 30; display: flex; }
+.drawer { margin-left: auto; width: 100%; max-width: 720px; height: 100%; background: var(--bg); overflow-y: auto; box-shadow: -12px 0 40px rgba(0, 0, 0, 0.2); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.dhead { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom: 1px solid var(--line); padding: calc(12px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 12px 24px; display: flex; gap: 12px; align-items: center; }
+.dbody { padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 16px; }
+.eyebrow { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.kpi { padding: 14px 16px; }
+.kpi .k { font-size: 12px; color: var(--muted); }
+.kpi .v { font-weight: 600; font-size: 15px; }
+.kpi.inv { background: var(--inv-bg); color: var(--inv-fg); border-color: var(--inv-bg); }
+.kpi.inv .k { color: inherit; opacity: 0.75; }
+.kpi.inv .v { font-size: 18px; font-weight: 700; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; font-size: 12px; }
+.steps li { display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+.steps li i { display: block; height: 4px; border-radius: 2px; background: var(--line); }
+.steps li.done i { background: var(--ink); }
+.steps li.cur { color: var(--ink); font-weight: 600; }
+dl.kv { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; }
+dl.kv dt { font-size: 12px; color: var(--muted); }
+dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break: break-word; }
+
+.modal-wrap { position: fixed; inset: 0; z-index: 40; background: var(--scrim); overflow-y: auto; padding: calc(24px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.modal { width: 100%; max-width: 680px; margin: 0 auto; background: var(--surface); border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25); }
+.mhead { display: flex; align-items: center; gap: 12px; padding: 18px 16px 14px 24px; border-bottom: 1px solid var(--line-2); }
+.mbody { padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; }
+.mfoot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 14px 24px 20px; border-top: 1px solid var(--line-2); }
+.choice { all: unset; display: flex; gap: 14px; align-items: flex-start; padding: 16px; border: 1px solid var(--field); border-radius: 12px; cursor: pointer; }
+.choice:hover { border-color: var(--ink); }
+.choice:focus-visible { outline: 2px solid var(--ink); }
+.drop { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 26px 20px; border: 1.5px dashed var(--field); border-radius: 12px; text-align: center; cursor: pointer; }
+.drop.over { border-color: var(--ink); background: var(--soft); }
+.filebox { padding: 10px 6px 10px 12px; background: var(--bg); border-radius: 8px; display: flex; gap: 10px; align-items: flex-start; }
+.subcard { margin-top: 8px; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; gap: 10px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 60; max-width: min(560px, calc(100vw - 32px)); padding: 12px 16px; border-radius: 10px; background: var(--inv-bg); color: var(--inv-fg); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); font-size: 14px; }
+.toast.e { background: var(--danger); color: #FFFFFF; }
+
+.auth { min-height: 100%; display: flex; align-items: center; justify-content: center; padding-block: 40px; }
+.auth .box { width: 100%; max-width: 440px; padding: 30px 28px; display: flex; flex-direction: column; gap: 18px; }
+.alpha { display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--ink); border-radius: 4px; padding: 0 6px; margin-left: 6px; vertical-align: 2px; }
+@media (prefers-reduced-motion: no-preference) { .drawer { animation: slide 0.18s ease-out; } @keyframes slide { from { transform: translateX(24px); opacity: 0.6; } } }
+.stepnow { display: none; font-size: 13px; }
+.burger { display: none; border: 1px solid var(--line); }
+.navscrim { z-index: 45; }
+.navsheet { margin-left: auto; width: min(320px, 86vw); height: 100%; overflow-y: auto; background: var(--surface); box-shadow: -12px 0 40px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; gap: 16px; padding: calc(12px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) 16px; }
+.navitem { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 50px; padding: 0 14px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; color: var(--ink); }
+.navitem:hover { background: var(--soft); }
+.navitem:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.navitem.on { background: var(--inv-bg); color: var(--inv-fg); }
+.navitem.on .pill { background: var(--inv-fg); color: var(--inv-bg); }
+@media (prefers-reduced-motion: no-preference) { .navsheet { animation: slide 0.18s ease-out; } }
+.addbtn .lbl { display: inline; }
+/* Phone list (cards) — used below 900px instead of the wide table */
+.mlist { display: flex; flex-direction: column; gap: 10px; }
+.mbar { display: flex; align-items: center; gap: 8px; }
+.mbar select { min-width: 0; max-width: 46vw; }
+.mcard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mcard.sel { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.mtop { display: flex; align-items: center; gap: 6px; font-size: 13px; min-width: 0; }
+.ckwrap { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -6px 0 -6px -12px; flex: 0 0 auto; cursor: pointer; }
+.mcard .namebtn { min-height: 40px; }
+.mcard .namebtn b { font-size: 15px; word-break: break-word; }
+.mmeta { font-size: 13px; color: var(--ink-2); word-break: break-word; }
+.mcf { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.mcf .amt { margin-left: auto; font-size: 16px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.mcf .icon { margin-right: -10px; }
+
+@media (max-width: 900px) {
+  header.top .wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "brand bell burger"; gap: 8px; padding-block: 8px; }
+  nav.tabs, .addbtn, .acctw { display: none !important; }
+  .burger { display: inline-flex; grid-area: burger; }
+  .brand { grid-area: brand; min-width: 0; }
+  .brand small { display: none; }
+  .brand > div { min-width: 0; }
+  .brand b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bellw { grid-area: bell; }
+  .acctw { grid-area: acct; }
+  nav.tabs { grid-area: tabs; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 8px; }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; min-height: 40px; padding: 0 12px; flex: 0 0 auto; }
+  .acct { padding: 0 4px; }
+  .acct span.t { display: none; }
+  .pop { position: fixed; top: calc(64px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); width: auto; max-width: none; }
+  .addbtn { grid-area: add; width: 44px; height: 44px; min-height: 44px; padding: 0; }
+  .addbtn .lbl { display: none; }
+  main.page { padding-block: 14px calc(88px + env(safe-area-inset-bottom, 0px)); gap: 12px; }
+  .pad { padding: 14px 16px; }
+  .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chips .chip { flex: 0 0 auto; }
+  .chips .lab { display: none; }
+  .fgrid { grid-template-columns: 1fr 1fr !important; }
+  .fgrid .fld:nth-child(n+1) { min-width: 0; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+  .bulk { position: fixed; z-index: 26; left: 0; right: 0; bottom: 0; border-radius: 14px 14px 0 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2); }
+  .bulk::-webkit-scrollbar { display: none; }
+  .bulk > * { flex: 0 0 auto; }
+  .bulk b { flex-grow: 0; }
+  .rmc { position: fixed; z-index: 27; left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); bottom: calc(78px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2); }
+  .toast { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+  body:has(.bulk) .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 480px) { .brand .alpha { display: none; } }
+@media (max-width: 380px) { .tab { padding: 0 10px; font-size: 13px; } }
+@media (max-width: 560px) {
+  .dbody, .mbody { padding-left: 16px; padding-right: 16px; }
+  .dhead { padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+  .steps li span { display: none; }
+  .stepnow { display: block; }
+  .modal-wrap { padding: 0; }
+  .modal { max-width: none !important; min-height: 100%; border-radius: 0; box-shadow: none; display: flex; flex-direction: column; }
+  .modal > .mbody, .modal > form.mbody { flex: 1 0 auto; }
+  .mhead { position: sticky; top: 0; z-index: 2; background: var(--surface); padding: calc(10px + env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); }
+  .mfoot { position: sticky; bottom: 0; z-index: 2; background: var(--surface); padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .auth .box { padding: 24px 18px; }
+}
+</style>
+
+</head>
+<body>
+<div id="app"><div class="gut" style="padding-block: 40px"><p>Loading DAA Payment Queue…</p></div></div>
+
+<script src="/vendor/htm-preact-3.1.1.umd.js"></script>
+<script src="/vendor/pdf-lib-1.17.1.min.js"></script>
+<script src="/vendor/fontkit-1.1.1.umd.min.js"></script>
+<script src="/vendor/pdf-3.11.174.min.js"></script>
+<script src="/vendor/jsqr-1.4.0.js"></script>
+<script src="/vendor/qrcode-generator-1.4.4.js"></script>
+<script src="/api-shim.js"></script>
+<script>
+(function () {
+'use strict';
+var P = window.htmPreact, html = P.html, render = P.render, useState = P.useState, useEffect = P.useEffect, useRef = P.useRef;
+
+// ---------- constants
+var ASSET = { logo: '/static/daa-logo.png', fontR: '/static/IBMPlexSans-Regular.woff', fontB: '/static/IBMPlexSans-SemiBold.woff' };
+var BUYER_TIN = '02764318';
+var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
+var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
+var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
+var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log'];
+
+// ---------- global store
+var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
+  ui: { tab: 'queue', open: null, modal: null, checked: {}, sort: { key: 'pq', dir: -1 }, flt: blankFilter(), bell: false, menu: false, profile: false, toast: null, busy: '', rmConfirm: false, denyOpen: false } };
+COLS.forEach(function (c) { G.data[c] = []; });
+function redraw() { G.tick(); }
+function setUi(p) { Object.assign(G.ui, p); redraw(); }
+function blankFilter() { return { type: 'all', status: 'all', client: 'all', project: 'all', from: '', to: '' }; }
+var toastTimer = null;
+function toast(text, bad) { clearTimeout(toastTimer); setUi({ toast: { text: text, bad: !!bad } }); toastTimer = setTimeout(function () { setUi({ toast: null }); }, 6000); }
+
+// ---------- helpers
+function pad(n, w) { var s = String(n); while (s.length < w) s = '0' + s; return s; }
+function fmt(n) { if (n == null || isNaN(n)) return '—'; var p = Number(n).toFixed(2).split('.'); return p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + p[1]; }
+function parseNum(t) {
+  t = String(t == null ? '' : t).trim().replace('%', '').replace(/\s/g, '');
+  var c = t.lastIndexOf(','), d = t.lastIndexOf('.');
+  if (c > -1 && d > -1) t = c > d ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  else if (c > -1) t = t.replace(',', '.');
+  return parseFloat(t);
+}
+function todayIso() { var t = new Date(); return t.getFullYear() + '-' + pad(t.getMonth() + 1, 2) + '-' + pad(t.getDate(), 2); }
+function isoToDate(iso) { if (!iso) return ''; var p = iso.split('-'); return p[2] + '.' + p[1] + '.' + p[0]; }
+function stamp() { var t = new Date(); return pad(t.getDate(), 2) + '.' + pad(t.getMonth() + 1, 2) + '. ' + pad(t.getHours(), 2) + ':' + pad(t.getMinutes(), 2); }
+function pqNo(n) { return 'PQ-' + pad(n, 4); }
+function uid(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function nameOf(u) { return u ? ((u.first || '') + ' ' + (u.last || '')).trim() || u.email : '—'; }
+function initials(u) { var n = nameOf(u).split(/\s+/); return (((n[0] || '')[0] || '') + ((n[1] || '')[0] || '')).toUpperCase(); }
+function byId(list, id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]; return null; }
+function userName(id) { return id ? nameOf(byId(G.data.users, id)) : '—'; }
+function isTop(r) { return r === 'sa' || r === 'ceo'; }
+function creatable(r) { return isTop(r) ? ['sa', 'ceo', 'am', 'aa', 'om'] : (r === 'am' ? ['aa'] : []); }
+function can(role, action, st) {
+  var top = isTop(role);
+  if (action === 'approve') return (top || role === 'am') && st === 0;
+  if (action === 'approvePay') return top && st === 1;
+  if (action === 'send') return top && st === 2;
+  if (action === 'paid') return (top || role === 'om') && st === 3;
+  if (action === 'deny') return (top && st <= 2) || (role === 'am' && st === 0);
+  return false;
+}
+function roleHas(role, action) { return isTop(role) || ({ approve: ['am'], approvePay: [], send: [], paid: ['om'], deny: ['am'] }[action] || []).indexOf(role) >= 0; }
+var ACTIONS = [['approve', 'Approve', 1], ['approvePay', 'Approve for payment', 2], ['send', 'Send to payment', 3], ['paid', 'Paid', 4]];
+
+// Montenegrin bank accounts: BBB-NNNNNNNNNNNNN-KK, KK = 98 - (first 16 digits * 100 mod 97)
+var BANKS = { '510': 'Crnogorska komercijalna banka', '520': 'Hipotekarna banka', '530': 'NLB Banka', '535': 'Prva banka Crne Gore', '540': 'Erste Bank', '555': 'Addiko Bank', '560': 'Universal Capital Bank', '565': 'Lovćen banka', '570': 'Zapad banka', '575': 'Ziraat Bank' };
+function acctParts(s) {
+  s = String(s || '').trim();
+  var m = s.match(/^(\d{3})[\s.\-]+(\d{1,13})[\s.\-]+(\d{2})$/) || s.replace(/[\s-]/g, '').match(/^(\d{3})(\d{13})(\d{2})$/);
+  if (!m) return null;
+  var mid = m[2]; while (mid.length < 13) mid = '0' + mid;
+  return { bank: m[1], mid: mid, k: m[3], full: m[1] + '-' + mid + '-' + m[3] };
+}
+// Montenegrin accounts are 3-digit bank code + up to 13 digits (zero-filled) + 2 digits; there is no reliable public check-digit rule.
+function acctValid(s) { return !!acctParts(s); }
+function acctOk(s) { return !!acctParts(s); }
+function acctUsable(x) { return acctOk(x.account) && (acctValid(x.account) || !!x.acctConfirmed); }
+function acctNorm(s) { var p = acctParts(s); return p ? p.full : String(s || '').trim(); }
+function bankName(s, printed) { var p = acctParts(s); if (printed) return printed; if (!p) return ''; return BANKS[p.bank] || 'Bank code ' + p.bank; }
+function acctFind(lines) {
+  var out = [], seen = {};
+  lines.forEach(function (l) {
+    var re = /(^|[^\d])(5\d{2}-\d{1,13}-\d{2}|5\d{17})(?!\d)/g, m;
+    while ((m = re.exec(l))) {
+      var a = m[2]; if (!acctOk(a)) continue;
+      var full = acctNorm(a); if (seen[full]) continue; seen[full] = true;
+      var before = l.slice(0, m.index + m[1].length), c = before.lastIndexOf(':');
+      var printed = (c >= 0 ? before.slice(c + 1) : '').replace(/\s+/g, ' ').trim();
+      if (!/[A-Za-zČĆŠŽĐčćšžđ]{3}/.test(printed) || printed.length > 45) printed = '';
+      out.push({ account: full, bank: bankName(full, printed), checked: acctValid(full) });
+    }
+  });
+  out.sort(function (x, y) { return (y.checked ? 1 : 0) - (x.checked ? 1 : 0); });
+  return out;
+}
+function acctHint(a, printed) {
+  if (!String(a || '').trim()) return 'Required before Send to payment. Usually printed next to "Žiro račun".';
+  if (!acctOk(a)) return 'Use bank code, account and 2 last digits, e.g. 565-40-27. The zeros are filled in for you.';
+  var full = acctNorm(a);
+  return bankName(a, printed) + (full !== String(a).trim() ? ' · fills out to ' + full : ' · format OK');
+}
+
+
+// ---------- passwords (PBKDF2-SHA256 in the browser)
+function hex(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }
+async function hashPw(pw, saltHex, iter) {
+  var key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  var salt = new Uint8Array(saltHex.match(/../g).map(function (h) { return parseInt(h, 16); }));
+  return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: salt, iterations: iter }, key, 256));
+}
+async function newPw(pw) { var salt = hex(crypto.getRandomValues(new Uint8Array(16))); return { salt: salt, iter: 120000, hash: await hashPw(pw, salt, 120000) }; }
+async function checkPw(user, pw) { return !!(user && user.pw && (await hashPw(pw, user.pw.salt, user.pw.iter)) === user.pw.hash); }
+
+// ---------- database
+function col(c) { return G.db.collection(c); }
+async function put(c, id, data) { try { await col(c).doc(id).set(data); return true; } catch (e) { toast('Could not save: ' + (e.message || e.code), true); return false; } }
+async function patch(c, id, data) { try { await col(c).doc(id).update(data); return true; } catch (e) { toast('Could not save: ' + (e.message || e.code), true); return false; } }
+async function del(c, id) { try { await col(c).doc(id).delete(); return true; } catch (e) { toast('Could not delete: ' + (e.message || e.code), true); return false; } }
+function notify(list) { list.forEach(function (n) { put('notifs', uid('n'), Object.assign({ ts: Date.now(), time: stamp(), readBy: {} }, n)); }); }
+
+// ---------- activity log
+function logEv(type, text, itemId) { if (!G.me || !G.db) return; put('log', uid('l'), { ts: Date.now(), time: stamp(), by: G.me.id, type: type, text: text, itemId: itemId || '' }); }
+
+// ---------- two-step sign-in: 6-digit codes from an authenticator app (RFC 6238, 30 s, SHA-1)
+var B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function b32enc(bytes) { var bits = 0, val = 0, out = ''; for (var i = 0; i < bytes.length; i++) { val = (val << 8) | bytes[i]; bits += 8; while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; } } if (bits > 0) out += B32[(val << (5 - bits)) & 31]; return out; }
+function b32dec(s) { s = String(s).toUpperCase().replace(/[\s=]/g, ''); var bits = 0, val = 0, out = []; for (var i = 0; i < s.length; i++) { var k = B32.indexOf(s[i]); if (k < 0) continue; val = ((val << 5) | k) & 0xffff; bits += 5; if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; } } return new Uint8Array(out); }
+async function totpAt(secret, counter) {
+  var key = await crypto.subtle.importKey('raw', b32dec(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  var msg = new Uint8Array(8); for (var i = 7; i >= 0; i--) { msg[i] = counter & 255; counter = Math.floor(counter / 256); }
+  var h = new Uint8Array(await crypto.subtle.sign('HMAC', key, msg)), o = h[h.length - 1] & 15;
+  var c = ((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3];
+  return ('000000' + (c % 1000000)).slice(-6);
+}
+async function totpOk(secret, code) {
+  code = String(code || '').replace(/\s/g, ''); if (!/^\d{6}$/.test(code) || !secret) return false;
+  var t = Math.floor(Date.now() / 30000);
+  for (var d = -1; d <= 1; d++) if ((await totpAt(secret, t + d)) === code) return true;
+  return false;
+}
+function newTotpSecret() { return b32enc(crypto.getRandomValues(new Uint8Array(20))); }
+function totpUri(u, secret) { return 'otpauth://totp/' + encodeURIComponent('DAA Pay:' + u.email) + '?secret=' + secret + '&issuer=' + encodeURIComponent('DAA Pay') + '&algorithm=SHA1&digits=6&period=30'; }
+function qrDataUrl(text) { try { var q = window.qrcode(0, 'M'); q.addData(text); q.make(); return q.createDataURL(5, 8); } catch (e) { return ''; } }
+function needs2fa(u) { return !!u && (u.role === 'sa' || u.role === 'ceo'); }
+function has2fa(u) { return !!(u && u.totp && u.totp.on); }
+
+function sessionGet() { return null; }
+function sessionSet(v) { try { if (v) sessionStorage.setItem('daa-pq-uid', v); else sessionStorage.removeItem('daa-pq-uid'); } catch (e) {} }
+function restoreSession() {
+  if (G.me) { var u = byId(G.data.users, G.me.id); if (u) G.me = u; if (G.me && G.me.active === false) G.me = null; }
+}
+function onSignedIn(u) {
+  G.me = u; G.memId = u.id; G.dataReady = false; G.loaded = {};
+  COLS.forEach(function (c) { G.data[c] = []; });
+  if (!G.subscribed) {
+    G.subscribed = true;
+    COLS.forEach(function (c) {
+      var q = c === 'notifs' ? col(c).orderBy('ts', 'desc').limit(300) : c === 'log' ? col(c).orderBy('ts', 'desc').limit(1000) : col(c);
+      q.onSnapshot(function (snap) {
+        G.data[c] = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+        G.loaded[c] = true;
+        if (COLS.every(function (x) { return G.loaded[x]; })) G.dataReady = true;
+        restoreSession(); redraw();
+      });
+    });
+  }
+  window.daa.start();
+  setUi({ tab: 'queue', open: null });
+}
+
+async function init() {
+  var r = await Promise.all([window.claude.use('db'), window.claude.use('assets'), window.claude.use('downloads'), window.claude.use('mcp')]);
+  G.db = r[0]; G.assets = r[1]; G.downloads = r[2]; G.mcp = r[3];
+  window.daa.onSignedOut(function () { if (G.me) { G.me = null; G.memId = null; setUi({ open: null, modal: null, profile: false, nav: false }); toast('You were signed out. Please sign in again.', true); } });
+  try { var m = await window.daa.get('/api/me'); if (m.user) onSignedIn(m.user); else G.setup = !!m.setup; } catch (e) { G.err = 'DAA Pay could not reach its server. Check your connection and reload the page.'; }
+  G.ready = true; redraw();
+}
+
+// ---------- files
+async function saveFile(name, data) {
+  if (!G.downloads) { toast('Downloads are not available in this view.', true); return; }
+  try { await G.downloads.save({ filename: name, data: data }); }
+  catch (e) { if (e && e.code !== 'declined') toast('Could not download: ' + (e.message || e.code), true); }
+}
+async function uploadFile(file) {
+  if (!G.assets) throw new Error('You need edit access to this app to upload files. Ask the owner to share it with edit access.');
+  try { var r = await G.assets.upload(file); return r.id; }
+  catch (e) { throw new Error(file.name + ': ' + (e.code === 'unsupported_type' ? 'this file type cannot be stored (use PDF, PNG or JPG)' : e.code === 'too_large' ? 'file is larger than 20 MB' : (e.message || e.code))); }
+}
+async function getBytes(url) { var r = await fetch(url); if (!r.ok) throw new Error('Could not read a stored file'); return new Uint8Array(await r.arrayBuffer()); }
+
+// ---------- QR + invoice text reading
+function parseQr(text) {
+  if (!text || text.indexOf('iic=') < 0) return null;
+  var g = function (k) { var m = text.match(new RegExp('[?&]' + k + '=([^&#]*)')); return m ? decodeURIComponent(m[1]) : ''; };
+  var o = { url: text, iic: g('iic'), tin: g('tin'), crtd: g('crtd'), ord: g('ord'), bu: g('bu'), cr: g('cr'), sw: g('sw'), prc: parseFloat(g('prc')) };
+  return o.iic && o.tin && o.crtd ? o : null;
+}
+function joinLines(items) {
+  var rows = [];
+  items.forEach(function (t) {
+    if (!t.str || !t.str.trim()) return;
+    var y = t.transform[5], x = t.transform[4], r = null;
+    for (var i = 0; i < rows.length; i++) if (Math.abs(rows[i].y - y) < 3) { r = rows[i]; break; }
+    if (!r) { r = { y: y, parts: [] }; rows.push(r); }
+    r.parts.push({ x: x, w: t.width || 0, s: t.str });
+  });
+  rows.sort(function (a, b) { return b.y - a.y; });
+  return rows.map(function (r) {
+    r.parts.sort(function (a, b) { return a.x - b.x; });
+    var out = '', end = null;
+    r.parts.forEach(function (p) { if (end !== null && p.x - end > 1.5 && !/\s$/.test(out)) out += ' '; out += p.s; end = p.x + p.w; });
+    return out.replace(/\s+/g, ' ').trim();
+  });
+}
+function parseInvoiceText(lines, sellerTin) {
+  var NUM = /^-?\d+(?:[.,]\d{3})*(?:[.,]\d+)?%?$/;
+  var BAD = /(ukupno|total|pdv|osnovica|rabat|uplat|iznos|rekapitulacij|broj|datum|period|tel|fax|pib|žiro|ziro|strana|dug|slovima|količina|kolicina|cijena|opis|naziv)/i;
+  var text = lines.join('\n'), out = { items: [] }, tinLine = -1;
+  lines.forEach(function (l, i) { if (tinLine < 0 && sellerTin && l.indexOf(sellerTin) > -1) tinLine = i; });
+  var head = lines.slice(0, Math.max(3, tinLine + 1));
+  var cand = head.filter(function (l) { return /(d\.?\s?o\.?\s?o|a\.?\s?d\.?\b|\bdoo\b|\bltd\b|\bs\.?p\.?\b)/i.test(l) && l.indexOf(BUYER_TIN) < 0 && !/daa montenegro/i.test(l); })[0] || head[0] || '';
+  out.name = cand.split(/\s(?:Tel|Fax|PIB|Adresa|E-?mail|Web)/i)[0].replace(/^(Prodavac|Izdavalac|Dobavljač)\s*:\s*/i, '').trim();
+  var adr = head.filter(function (l) { return /^Adresa\s*:/i.test(l); })[0];
+  if (adr) out.address = adr.replace(/^Adresa\s*:\s*/i, '').split(/\s(?:PIB|PDV|Tel)/i)[0].replace(/\s*,\s*/g, ', ').replace(/^,\s*/, '').trim();
+  var pdvs = (text.match(/PDV\s*(?:broj|br\.?)?\s*:?\s*(ME\d{8})/gi) || []).map(function (m) { return m.match(/ME\d{8}/i)[0]; }).filter(function (p) { return p.indexOf(BUYER_TIN) < 0; });
+  if (pdvs.length) out.pdv = pdvs[0];
+  var pibs = (text.match(/PIB\s*:?\s*(\d{8,13})/gi) || []).map(function (m) { return m.match(/\d{8,13}/)[0]; }).filter(function (p) { return p !== BUYER_TIN; });
+  if (pibs.length) out.pib = pibs[0];
+  var tots = text.match(/(?:Za\s+uplatu|Ukupno\s+za\s+pla[cć]anje|Ukupno\s+po\s+ra[cč]unu|Total)\s*(?:EUR)?\s*:?\s*(-?\d[\d.,]*)/gi);
+  if (tots) { var tv = parseNum(tots[tots.length - 1].match(/-?\d[\d.,]*$/)[0]); if (tv > 0) out.total = tv; }
+  var accs = acctFind(lines);
+  if (accs.length) { out.account = accs[0].account; out.bank = accs[0].bank; out.accounts = accs; }
+  var no = text.match(/Broj\s+(?:dokumenta|ra[cč]una|fakture)\s*:?\s*([A-Z0-9][A-Z0-9\/\-.]+)/i);
+  if (no) out.number = no[1];
+  var due = text.match(/(?:Datum\s+valute|Rok\s+pla[cć]anja|Dospije[cć]e)\s*:?\s*(\d{2}\.\d{2}\.\d{4})/i);
+  if (due) out.due = due[1];
+  lines.forEach(function (l) {
+    var tok = l.split(' '), nums = [];
+    while (tok.length && NUM.test(tok[tok.length - 1])) nums.unshift(tok.pop());
+    var name = tok.join(' ');
+    if (nums.length < 3 || !/[A-Za-zČĆŠŽĐčćšžđ]/.test(name) || BAD.test(name) || name.length > 80) return;
+    var v = nums.map(parseNum);
+    out.items.push({ name: name, qty: v[0], price: v[1], total: v[v.length - 1] });
+  });
+  return out;
+}
+async function scanFile(file) {
+  var buf = await file.arrayBuffer(), b = new Uint8Array(buf), found = [], firstText = null;
+  var decode = function (cv) {
+    var im = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+    var r = window.jsQR ? window.jsQR(im.data, im.width, im.height, { inversionAttempts: 'dontInvert' }) : null;
+    return r ? parseQr(r.data) : null;
+  };
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) {
+    var lib = window.pdfjsLib;
+    if (!lib) throw new Error('the PDF reader did not load');
+    lib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker-3.11.174.min.js';
+    var pdf = await lib.getDocument({ data: b.slice() }).promise;
+    for (var p = 1; p <= pdf.numPages; p++) {
+      var page = await pdf.getPage(p), hit = null, scales = [2.8, 4], txt = null;
+      try { txt = (await page.getTextContent()).items; } catch (e) {}
+      if (p === 1) firstText = txt;
+      for (var si = 0; si < scales.length && !hit; si++) {
+        var vp = page.getViewport({ scale: scales[si] }), cv = document.createElement('canvas');
+        cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        hit = decode(cv);
+      }
+      if (hit) { hit.page = p - 1; if (txt) hit.text = parseInvoiceText(joinLines(txt), hit.tin); found.push(hit); }
+    }
+  } else {
+    var bmp = await createImageBitmap(new Blob([buf], { type: file.type || 'image/png' }));
+    var k = Math.min(1, 3000 / Math.max(bmp.width, bmp.height)), cv2 = document.createElement('canvas');
+    cv2.width = Math.round(bmp.width * k); cv2.height = Math.round(bmp.height * k);
+    cv2.getContext('2d').drawImage(bmp, 0, 0, cv2.width, cv2.height);
+    var h2 = decode(cv2);
+    if (h2) { h2.page = null; found.push(h2); }
+  }
+  var guess = !found.length && firstText ? parseInvoiceText(joinLines(firstText), null) : null;
+  return { found: found, guess: guess };
+}
+
+// ---------- PDF export (cover page per item + its documents)
+function printRows(x) {
+  var r = [
+    { label: 'Internal no.', value: pqNo(x.pqn) }, { label: 'Type', value: KIND[x.kind] },
+    { label: x.kind === 'invoice' ? 'Supplier' : 'Beneficiary', value: x.title },
+    { label: x.kind === 'invoice' ? 'Invoice no.' : 'Reference', value: x.number || '—' },
+    { label: 'Date', value: x.date || '—' }, { label: 'Client', value: clientName(x.clientId) || '—' }, { label: 'Project', value: projectName(x.projectId) || '—' },
+    { label: 'Amount', value: x.amount == null ? '—' : fmt(x.amount) + ' EUR' }, { label: 'Status', value: STATUS[x.status || 0] },
+    { label: 'Added by', value: userName(x.by) }
+  ];
+  if (x.kind === 'invoice') {
+    if (x.pib || x.pdv) r.push({ label: 'PIB / PDV', value: (x.pib || '—') + ' / ' + (x.pdv || '—') });
+    if (x.address) r.push({ label: 'Address', value: x.address });
+    if (x.account) r.push({ label: 'Bank account', value: x.account + ' · ' + (x.bank || bankName(x.account)) });
+    if (x.due) r.push({ label: 'Due', value: x.due });
+    if ((x.lineItems || []).length) r.push({ label: 'Items', value: x.lineItems.map(function (it) { return it.name + ' × ' + it.qty + ' — ' + fmt(it.total); }).join('\n') });
+    if (x.iic) r.push({ label: 'IKOF', value: x.iic });
+  }
+  (x.fields || []).forEach(function (f) { if (f.label !== 'Beneficiary') r.push(f); });
+  if (x.estimate) r.push({ label: 'Cost estimate', value: (x.estimate.number ? x.estimate.number + ' · ' : '') + x.estimate.fileName });
+  if (x.status === 5) r.push({ label: 'Denied', value: (x.denyReason || '') + ' (' + userName(x.deniedBy) + ')' });
+  return r;
+}
+function docsOf(x) {
+  var d = [];
+  if (x.kind === 'invoice' && x.fileId) d.push({ url: '/_blob/' + x.fileId, name: x.fileName, pages: x.pdfPages || null });
+  if (x.estimate && x.estimate.fileId) d.push({ url: '/_blob/' + x.estimate.fileId, name: 'Cost estimate: ' + x.estimate.fileName });
+  (x.attachments || []).forEach(function (a) { d.push({ url: '/_blob/' + a.fileId, name: a.name }); });
+  return d;
+}
+async function makePdf(list) {
+  var PL = window.PDFLib;
+  if (!PL || !window.fontkit) throw new Error('the PDF tools did not load; reload the page');
+  var doc = await PL.PDFDocument.create();
+  doc.registerFontkit(window.fontkit);
+  var reg = await doc.embedFont(await getBytes(ASSET.fontR), { subset: true });
+  var bold = await doc.embedFont(await getBytes(ASSET.fontB), { subset: true });
+  var logo = await doc.embedPng(await getBytes(ASSET.logo));
+  var W = 595.28, H = 841.89, M = 48, ink = PL.rgb(0.067, 0.067, 0.067), grey = PL.rgb(0.36, 0.36, 0.36), line = PL.rgb(0.85, 0.85, 0.85);
+  var wrap = function (text, font, size, width) {
+    var out = [];
+    String(text).split('\n').forEach(function (para) {
+      var cur = '';
+      para.split(' ').forEach(function (w) { var t = cur ? cur + ' ' + w : w; if (font.widthOfTextAtSize(t, size) > width && cur) { out.push(cur); cur = w; } else cur = t; });
+      out.push(cur);
+    });
+    return out;
+  };
+  var skipped = [], made = isoToDate(todayIso());
+  for (var i = 0; i < list.length; i++) {
+    var x = list[i], docs = docsOf(x);
+    var header = function (pg) {
+      pg.drawImage(logo, { x: W - M - 46, y: H - M - 60, width: 46, height: 60 });
+      pg.drawText(KIND[x.kind].toUpperCase(), { x: M, y: H - M - 12, size: 12, font: bold, color: ink });
+      pg.drawText('Status: ' + STATUS[x.status || 0], { x: M, y: H - M - 30, size: 11, font: reg, color: ink });
+      pg.drawText(pqNo(x.pqn), { x: M, y: H - M - 47, size: 10, font: reg, color: grey });
+      pg.drawText('DAA Montenegro d.o.o. · Payment queue · ' + made, { x: M, y: 28, size: 8, font: reg, color: grey });
+    };
+    var page = doc.addPage([W, H]), y;
+    header(page);
+    y = H - M - 96;
+    wrap(x.title, bold, 18, W - 2 * M).forEach(function (l) { page.drawText(l, { x: M, y: y, size: 18, font: bold, color: ink }); y -= 24; });
+    y -= 8;
+    var labelW = 150, valW = W - 2 * M - labelW;
+    var rows = printRows(x).concat(docs.length ? [{ label: 'Documents', value: docs.map(function (d) { return d.name; }).join('\n') }] : []);
+    rows.forEach(function (r) {
+      var lines = wrap(r.value == null ? '' : r.value, reg, 10, valW), h = Math.max(1, lines.length) * 14 + 8;
+      if (y - h < 50) { page = doc.addPage([W, H]); header(page); y = H - M - 96; }
+      page.drawLine({ start: { x: M, y: y + 4 }, end: { x: W - M, y: y + 4 }, thickness: 0.5, color: line });
+      page.drawText(r.label, { x: M, y: y - 10, size: 10, font: bold, color: grey });
+      lines.forEach(function (l, j) { page.drawText(l, { x: M + labelW, y: y - 10 - j * 14, size: 10, font: reg, color: ink }); });
+      y -= h;
+    });
+    for (var j = 0; j < docs.length; j++) {
+      var dd = docs[j], bytes;
+      try { bytes = await getBytes(dd.url); } catch (e) { skipped.push(pqNo(x.pqn) + ' ' + dd.name); continue; }
+      if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+        var src = await PL.PDFDocument.load(bytes, { ignoreEncryption: true });
+        var idx = (dd.pages || src.getPageIndices()).filter(function (n) { return n < src.getPageCount(); });
+        (await doc.copyPages(src, idx)).forEach(function (pg) { doc.addPage(pg); });
+      } else if (bytes[0] === 0x89 || (bytes[0] === 0xFF && bytes[1] === 0xD8)) {
+        var img = bytes[0] === 0x89 ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+        var sc = Math.min((W - 2 * M) / img.width, (H - 2 * M) / img.height, 1), ip = doc.addPage([W, H]);
+        ip.drawImage(img, { x: (W - img.width * sc) / 2, y: (H - img.height * sc) / 2, width: img.width * sc, height: img.height * sc });
+      } else skipped.push(pqNo(x.pqn) + ' ' + dd.name);
+    }
+  }
+  return { bytes: await doc.save(), skipped: skipped };
+}
+async function downloadPdf(list) {
+  if (G.ui.busy) return;
+  setUi({ busy: 'pdf' });
+  try {
+    var r = await makePdf(list);
+    await saveFile(list.length === 1 ? pqNo(list[0].pqn) + '.pdf' : 'DAA-payment-queue-' + todayIso() + '.pdf', r.bytes);
+    if (r.skipped.length) toast('PDF ready. Not merged (unsupported format): ' + r.skipped.join(', '), true);
+  } catch (e) { toast('Could not create the PDF: ' + (e.message || e), true); }
+  setUi({ busy: '' });
+}
+async function downloadOriginal(x) {
+  if (x.kind !== 'invoice' || !x.fileId) { downloadPdf([x]); return; }
+  try { await saveFile(x.fileName || pqNo(x.pqn), await getBytes('/_blob/' + x.fileId)); } catch (e) { toast(e.message, true); }
+}
+
+// ---------- lookups
+function clientName(id) { var c = byId(G.data.clients, id); return c ? c.name : ''; }
+function projectName(id) { var p = byId(G.data.projects, id); return p ? p.name : ''; }
+function benByPib(pib) { if (!pib) return null; for (var i = 0; i < G.data.bens.length; i++) if (G.data.bens[i].pib === pib) return G.data.bens[i]; return null; }
+async function upsertBen(u) {
+  var ex = u.pib ? benByPib(u.pib) : null;
+  if (!ex && u.name) ex = G.data.bens.filter(function (b) { return !b.pib && b.name.toLowerCase() === u.name.toLowerCase(); })[0];
+  if (ex) {
+    var p = { name: u.name };
+    ['address', 'pdv', 'payType', 'account', 'iban', 'swift', 'jmbg'].forEach(function (k) { if (u[k]) p[k] = u[k]; });
+    return patch('bens', ex.id, p);
+  }
+  return put('bens', uid('b'), Object.assign({ name: '', pib: '', address: '', pdv: '', payType: 'domestic', account: '', iban: '', swift: '', jmbg: u.pib || '' }, u));
+}
+function nextPq() { return G.data.items.reduce(function (m, x) { return Math.max(m, x.pqn || 0); }, 0) + 1; }
+
+// ---------- icons
+var I = {
+  plus: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`,
+  x: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+  dl: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>`,
+  pdf: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M12 11v6M9 14l3 3 3-3"/></svg>`,
+  ext: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v6H4V6h6"/></svg>`,
+  bell: html`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>`,
+  trash: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>`,
+  up: html`<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v4h16v-4"/></svg>`,
+  inv: html`<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>`,
+  ref: html`<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v8M9.5 10.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/></svg>`,
+  con: html`<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M8 17c1.5-2 2.5-2 3.5 0s2 2 4.5-1"/></svg>`,
+  menu: html`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>`,
+  clip: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12l-8.5 8.5a5 5 0 0 1-7-7L13 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 8"/></svg>`
+};
+function useNarrow() {
+  var mq = window.matchMedia ? window.matchMedia('(max-width: 900px)') : null;
+  var s = useState(mq ? mq.matches : false);
+  useEffect(function () {
+    if (!mq) return;
+    var f = function (e) { s[1](e.matches); };
+    if (mq.addEventListener) mq.addEventListener('change', f); else mq.addListener(f);
+    return function () { if (mq.removeEventListener) mq.removeEventListener('change', f); else mq.removeListener(f); };
+  }, []);
+  return s[0];
+}
+var Logo = function (p) { return html`<img class="logo" src=${ASSET.logo} alt="DAA" width=${p.w || 34} height=${Math.round((p.w || 34) * 284 / 219)} />`; };
+var Field = function (p) { return html`<label class=${'fld' + (p.wide ? ' wide' : '')}><span>${p.label}${p.req ? html` <span class="req">*</span>` : ''}</span>${p.children}${p.hint ? html`<span class="hint">${p.hint}</span>` : ''}</label>`; };
+function inputOn(obj, setObj, k) { return function (e) { var p = Object.assign({}, obj); p[k] = e.target.value; setObj(p); }; }
+
+function TotpSetup(p) {
+  var ss = useState(null), setup = ss[0], setSetup = ss[1];
+  var cs = useState(''), code = cs[0], setCode = cs[1];
+  var es = useState(''), err = es[0], setErr = es[1];
+  var bs = useState(false), busy = bs[0], setBusy = bs[1];
+  useEffect(function () { window.daa.post('/api/totp/start').then(setSetup, function (e) { setErr(e.message); }); }, []);
+  async function verify(e) {
+    if (e) e.preventDefault();
+    setBusy(true); setErr('');
+    try { var r = await window.daa.post('/api/totp/enable', { code: code }); p.onDone(r.totp); }
+    catch (ex) { setErr(ex.message); setBusy(false); }
+  }
+  if (!setup) return html`<div class="muted" style="font-size: 13px">${err || 'Preparing…'}</div>`;
+  var img = qrDataUrl(setup.uri);
+  return html`<form class="stack" style="gap: 12px" onSubmit=${verify}>
+    <ol style="margin: 0; padding-left: 20px; font-size: 13px; display: flex; flex-direction: column; gap: 4px">
+      <li>Open an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, 1Password or similar).</li>
+      <li>Scan this code, or type the setup key by hand.</li>
+      <li>Enter the 6-digit number the app shows.</li>
+    </ol>
+    <div class="row" style="gap: 16px; align-items: center">
+      ${img && html`<img src=${img} alt="QR code for your authenticator app" width="168" height="168" style="background: #FFFFFF; padding: 6px; border-radius: 8px; border: 1px solid var(--line)" />`}
+      <div style="min-width: 0; flex: 1 1 180px"><div class="muted" style="font-size: 12px">Setup key</div><div class="mono" style="font-weight: 600; word-break: break-all; user-select: all">${setup.secret.match(/.{1,4}/g).join(' ')}</div></div>
+    </div>
+    <${Field} label="6-digit code" req><input id="totp-setup-code" class="inp mono" inputmode="numeric" autocomplete="one-time-code" maxlength="7" value=${code} onInput=${function (e) { setCode(e.target.value); }} style="max-width: 200px; letter-spacing: 0.2em; font-size: 18px" /><//>
+    ${err && html`<div class="alert e" role="alert">${err}</div>`}
+    <div class="row"><button class="btn" type="submit" disabled=${busy}>${busy ? 'Checking…' : 'Turn on two-step sign-in'}</button>${p.onCancel && html`<button class="btn q" type="button" onClick=${p.onCancel}>Cancel</button>`}</div>
+  </form>`;
+}
+
+// ================= FIRST RUN (empty database only) =================
+function FirstRun() {
+  var s = useState({ mode: 'import', first: '', last: '', email: '', pass: '', pass2: '', err: '', busy: false, done: '' }), f = s[0], set = s[1];
+  async function create(e) {
+    e.preventDefault();
+    if (f.pass !== f.pass2) { set(Object.assign({}, f, { err: 'The two passwords do not match.' })); return; }
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    try { await window.daa.post('/api/setup', { first: f.first, last: f.last, email: f.email, pass: f.pass }); G.setup = false; set(Object.assign({}, f, { busy: false, done: 'Your Super-admin account is ready. Sign in with it now; you will set up two-step sign-in next.' })); }
+    catch (ex) { set(Object.assign({}, f, { busy: false, err: ex.message })); }
+  }
+  function pick(e) {
+    var file = (e.target.files || [])[0]; e.target.value = ''; if (!file) return;
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    file.text().then(function (t) { return window.daa.post('/api/setup/import', JSON.parse(t)); })
+      .then(function (r) { G.setup = false; set(Object.assign({}, f, { busy: false, done: 'Restored ' + r.restored + ' records from the alpha. Sign in with your alpha email and password.' })); })
+      .catch(function (ex) { set(Object.assign({}, f, { busy: false, err: ex.message || 'Could not read that file.' })); });
+  }
+  return html`<main class="auth gut"><div class="card box" style="max-width: 520px">
+    <div class="row" style="gap: 14px"><${Logo} w=${46} /><div><h1 style="font-size: 22px">Set up DAA Pay</h1><div class="muted" style="font-size: 13px">This screen appears only while DAA Pay has no accounts.</div></div></div>
+    ${f.done ? html`<div class="alert i" role="status">${f.done}</div><button class="btn" onClick=${function () { redraw(); }}>Go to sign in</button>` : html`
+      <div class="row"><button class=${'chip' + (f.mode === 'import' ? ' on' : '')} onClick=${function () { set(Object.assign({}, f, { mode: 'import', err: '' })); }}>Bring over the alpha</button><button class=${'chip' + (f.mode === 'new' ? ' on' : '')} onClick=${function () { set(Object.assign({}, f, { mode: 'new', err: '' })); }}>Start empty</button></div>
+      ${f.mode === 'import' ? html`<div class="stack">
+          <p style="margin: 0; font-size: 14px">In the alpha, open <b>Users & roles → Data & backups → Download backup</b>, then choose that file here. Everyone keeps their alpha password and two-step sign-in. Uploaded invoice files are not in the backup.</p>
+          <label class="btn" style="align-self: flex-start; cursor: pointer">${f.busy ? 'Restoring…' : 'Choose backup file'}<input class="sr" type="file" accept="application/json,.json" onChange=${pick} disabled=${f.busy} /></label>
+        </div>`
+      : html`<form class="stack" onSubmit=${create}>
+          <div class="grid"><${Field} label="First name" req><input id="fr-first" class="inp" value=${f.first} onInput=${inputOn(f, set, 'first')} /><//><${Field} label="Last name" req><input id="fr-last" class="inp" value=${f.last} onInput=${inputOn(f, set, 'last')} /><//></div>
+          <${Field} label="Email" req><input id="fr-email" class="inp" type="email" placeholder="name@daa.co.me" value=${f.email} onInput=${inputOn(f, set, 'email')} /><//>
+          <div class="grid"><${Field} label="Password" req hint="At least 10 characters"><input id="fr-pass" class="inp" type="password" autocomplete="new-password" value=${f.pass} onInput=${inputOn(f, set, 'pass')} /><//><${Field} label="Repeat password" req><input id="fr-pass2" class="inp" type="password" autocomplete="new-password" value=${f.pass2} onInput=${inputOn(f, set, 'pass2')} /><//></div>
+          <button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Creating…' : 'Create Super-admin account'}</button>
+        </form>`}
+      ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}`}
+  </div></main>`;
+}
+
+// ================= AUTH =================
+function Login(p) {
+  var s = useState({ email: '', pass: '', err: '', busy: false, step: 'pw', setup: null, code: '' }), f = s[0], set = s[1];
+  async function submit(e) {
+    e.preventDefault();
+    var em = f.email.trim().toLowerCase();
+    if (!em || !f.pass) { set(Object.assign({}, f, { err: 'Enter your email and password.' })); return; }
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    try {
+      var r = await window.daa.post('/api/login', { email: em, pass: f.pass });
+      if (r.next === 'done') onSignedIn(r.user);
+      else set(Object.assign({}, f, { busy: false, err: '', pass: '', step: r.next, setup: r, code: '' }));
+    } catch (ex) { set(Object.assign({}, f, { busy: false, err: ex.message })); }
+  }
+  async function submitCode(e) {
+    e.preventDefault();
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    try { var r = await window.daa.post(f.step === 'code' ? '/api/login/code' : '/api/login/setup', { code: f.code }); onSignedIn(r.user); }
+    catch (ex) { set(Object.assign({}, f, { busy: false, err: ex.message })); }
+  }
+  if (f.step !== 'pw') {
+    var img = f.step === 'setup' ? qrDataUrl(f.setup.uri) : '';
+    return html`<main class="auth gut"><div class="card box">
+      <div class="row" style="gap: 14px"><${Logo} w=${46} /><div><h1 style="font-size: 22px">Two-step sign-in</h1><div class="muted" style="font-size: 13px; word-break: break-all">${f.setup.email}</div></div></div>
+      ${f.step === 'setup' && html`<div class="alert i" style="font-size: 13px">As ${ROLE[f.setup.role] || 'CEO or Super-admin'} you need two-step sign-in. Set it up once; after that you enter a code from your phone when you sign in.</div>
+        <ol style="margin: 0; padding-left: 20px; font-size: 13px; display: flex; flex-direction: column; gap: 4px">
+          <li>Open an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, 1Password or similar).</li>
+          <li>Scan this code, or type the setup key by hand.</li>
+          <li>Enter the 6-digit number the app shows.</li>
+        </ol>
+        <div class="row" style="gap: 16px; align-items: center">
+          ${img && html`<img src=${img} alt="QR code for your authenticator app" width="168" height="168" style="background: #FFFFFF; padding: 6px; border-radius: 8px; border: 1px solid var(--line)" />`}
+          <div style="min-width: 0; flex: 1 1 180px"><div class="muted" style="font-size: 12px">Setup key</div><div class="mono" style="font-weight: 600; word-break: break-all; user-select: all">${f.setup.secret.match(/.{1,4}/g).join(' ')}</div></div>
+        </div>`}
+      <form class="stack" onSubmit=${submitCode}>
+        <${Field} label="6-digit code from your authenticator app"><input id="login-code" class="inp mono" inputmode="numeric" autocomplete="one-time-code" maxlength="7" value=${f.code} onInput=${inputOn(f, set, 'code')} style="letter-spacing: 0.2em; font-size: 18px" /><//>
+        ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
+        <button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Checking…' : f.step === 'setup' ? 'Turn on and sign in' : 'Continue'}</button>
+        ${f.step === 'code' && html`<div class="muted" style="font-size: 12px">Lost your phone? Ask the Super-admin to reset your two-step sign-in.</div>`}
+      </form>
+      <button class="link" type="button" style="align-self: center" onClick=${function () { set({ email: f.email, pass: '', err: '', busy: false, step: 'pw', setup: null, code: '' }); }}>Back</button>
+    </div></main>`;
+  }
+  return html`<main class="auth gut"><div class="card box">
+    <div class="row" style="gap: 14px"><${Logo} w=${46} /><div><h1 style="font-size: 22px">Sign in <span class="alpha">Beta</span></h1><div class="muted" style="font-size: 13px">DAA Pay</div></div></div>
+    <form class="stack" onSubmit=${submit}>
+      <${Field} label="Email"><input id="login-email" class="inp" type="email" autocomplete="username" placeholder="name@daa.co.me" value=${f.email} onInput=${inputOn(f, set, 'email')} /><//>
+      <${Field} label="Password"><input id="login-pass" class="inp" type="password" autocomplete="current-password" value=${f.pass} onInput=${inputOn(f, set, 'pass')} /><//>
+      ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
+      <button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Signing in…' : 'Sign in'}</button>
+    </form>
+    <div class="row" style="justify-content: center; border-top: 1px solid var(--line-2); padding-top: 12px; font-size: 13px"><span class="muted">No account yet?</span><button class="link" type="button" onClick=${p.onRegister}>Request access</button></div>
+    <button class="link" type="button" style="align-self: center; font-weight: 500; font-size: 13px" onClick=${function () { setUi({ privacy: true }); }}>Privacy & data</button>
+  </div></main>`;
+}
+function Register(p) {
+  var s = useState({ first: '', last: '', position: '', email: '', approver: '', pass: '', pass2: '', err: '', sent: '', busy: false }), f = s[0], set = s[1];
+  async function submit(e) {
+    e.preventDefault();
+    var miss = [];
+    if (!f.first.trim()) miss.push('first name'); if (!f.last.trim()) miss.push('last name'); if (!f.position.trim()) miss.push('position');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) miss.push('a valid email');
+    if (f.pass.length < 8) miss.push('a password of at least 8 characters');
+    if (miss.length) { set(Object.assign({}, f, { err: 'Please add ' + miss.join(', ') + '.' })); return; }
+    if (f.pass !== f.pass2) { set(Object.assign({}, f, { err: 'The two passwords do not match.' })); return; }
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    try {
+      var r = await window.daa.post('/api/register', { first: f.first, last: f.last, position: f.position, email: f.email, approver: f.approver, pass: f.pass });
+      set(Object.assign({}, f, { busy: false, sent: 'Your request went to ' + r.approver + '. You get an email when it is approved.' }));
+    } catch (ex) { set(Object.assign({}, f, { busy: false, err: ex.message })); }
+  }
+  return html`<main class="auth gut"><div class="card box" style="max-width: 500px">
+    <div class="row" style="gap: 14px"><${Logo} w=${46} /><div><h1 style="font-size: 22px">Request access</h1><div class="muted" style="font-size: 13px">Your CEO or account manager confirms the request.</div></div></div>
+    ${f.sent ? html`<div class="alert i" role="status"><b>Request sent.</b> ${f.sent}</div>` : html`
+    <form class="stack" onSubmit=${submit}>
+      <div class="grid">
+        <${Field} label="First name" req><input id="reg-first" class="inp" autocomplete="given-name" value=${f.first} onInput=${inputOn(f, set, 'first')} /><//>
+        <${Field} label="Last name" req><input id="reg-last" class="inp" autocomplete="family-name" value=${f.last} onInput=${inputOn(f, set, 'last')} /><//>
+      </div>
+      <${Field} label="Position" req><input id="reg-pos" class="inp" value=${f.position} onInput=${inputOn(f, set, 'position')} /><//>
+      <${Field} label="Your email" req><input id="reg-email" class="inp" type="email" autocomplete="email" value=${f.email} onInput=${inputOn(f, set, 'email')} /><//>
+      <div class="grid">
+        <${Field} label="Password" req hint="At least 8 characters"><input id="reg-pass" class="inp" type="password" autocomplete="new-password" value=${f.pass} onInput=${inputOn(f, set, 'pass')} /><//>
+        <${Field} label="Repeat password" req><input id="reg-pass2" class="inp" type="password" autocomplete="new-password" value=${f.pass2} onInput=${inputOn(f, set, 'pass2')} /><//>
+      </div>
+      <${Field} label="Confirmed by (CEO or account manager email)" req hint="Must be a top-level @daa.co.me address. That person receives your request."><input id="reg-appr" class="inp" type="email" placeholder="name@daa.co.me" value=${f.approver} onInput=${inputOn(f, set, 'approver')} /><//>
+      ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
+      <button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Sending…' : 'Send request'}</button>
+    </form>`}
+    <button class="link" type="button" style="align-self: center" onClick=${p.onLogin}>Back to sign in</button>
+  </div></main>`;
+}
+
+// ================= HEADER =================
+function Header() {
+  var me = G.me, role = me.role, top = isTop(role), usersAllowed = top || role === 'am';
+  var mine = myNotifs(), unread = mine.filter(function (n) { return !(n.readBy || {})[me.id]; });
+  var regsN = G.data.regs.length;
+  function markRead(list) { list.forEach(function (n) { var rb = {}; rb[me.id] = true; patch('notifs', n.id, { readBy: rb }); }); }
+  return html`<header class="top"><div class="wrap gut">
+    <div class="brand"><${Logo} w=${34} /><div><b>DAA Pay <span class="alpha">Beta</span></b><small>DAA Montenegro d.o.o. · PIB 02764318</small></div></div>
+    <nav class="tabs" aria-label="Sections">
+      <button class=${'tab' + (G.ui.tab === 'queue' ? ' on' : '')} aria-current=${G.ui.tab === 'queue' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'queue' }); }}>Queue</button>
+      <button class=${'tab' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null }); }}>Beneficiaries</button>
+      ${usersAllowed && html`<button class=${'tab' + (G.ui.tab === 'users' ? ' on' : '')} aria-current=${G.ui.tab === 'users' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'users', open: null }); }}>Users & roles${regsN ? html`<span class="pill">${regsN}</span>` : ''}</button>`}
+    </nav>
+    <button class="btn addbtn" aria-label="Add to payment queue" onClick=${function () { setUi({ modal: 'choose', bell: false, menu: false }); }}>${I.plus}<span class="lbl">Add to payment queue</span></button>
+    <div class="bellw" style="position: relative">
+      <button class="icon" style="border: 1px solid var(--line); position: relative" aria-expanded=${G.ui.bell} aria-label=${unread.length ? 'Notifications, ' + unread.length + ' unread' : 'Notifications'} onClick=${function () { setUi({ bell: !G.ui.bell, menu: false }); }}>${I.bell}${unread.length ? html`<span class="dot" aria-hidden="true">${unread.length}</span>` : ''}</button>
+      ${G.ui.bell && html`<div class="pop" role="region" aria-label="Notifications">
+        <div class="row" style="justify-content: space-between; padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--line-2)"><b>Notifications</b><button class="link" style="font-weight: 500; font-size: 13px" onClick=${function () { markRead(unread); }}>Mark all as read</button></div>
+        <div style="max-height: 380px; overflow-y: auto">
+          ${mine.length ? mine.slice(0, 60).map(function (n) {
+            var rd = (n.readBy || {})[me.id];
+            return html`<button key=${n.id} style=${'all: unset; box-sizing: border-box; width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); cursor: pointer;' + (rd ? '' : ' background: var(--soft); box-shadow: inset 3px 0 0 var(--ink);')} onClick=${function () { markRead([n]); setUi(n.reg ? { tab: 'users', bell: false, open: null } : { tab: 'queue', bell: false, open: n.itemId || null }); }}><span style="font-size: 13px">${n.text}</span><span class="muted" style="font-size: 12px">${n.time}</span></button>`;
+          }) : html`<div class="empty" style="padding: 24px">You're all caught up.</div>`}
+        </div></div>`}
+    </div>
+    <div class="acctw" style="position: relative">
+      <button class="acct" aria-expanded=${G.ui.menu} aria-label="Account menu" onClick=${function () { setUi({ menu: !G.ui.menu, bell: false }); }}><span class="av" aria-hidden="true">${initials(me)}</span><span class="t"><b style="font-size: 13px">${nameOf(me)}</b><span class="muted" style="font-size: 11px">${ROLE[role]}</span></span></button>
+      ${G.ui.menu && html`<div class="pop" style="width: 220px; padding: 6px"><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ profile: true, menu: false }); }}>Profile settings</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ privacy: true, menu: false }); }}>Privacy & data</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${signOut}>Sign out</button></div>`}
+    </div>
+    <button class="icon burger" aria-label="Open menu" aria-expanded=${!!G.ui.nav} aria-controls="navsheet" onClick=${function () { setUi({ nav: true, bell: false, menu: false }); }}>${I.menu}</button>
+  </div></header>
+  ${G.ui.nav && html`<div class="scrim navscrim" onClick=${function (e) { if (e.target === e.currentTarget) setUi({ nav: false }); }}>
+    <nav id="navsheet" class="navsheet" aria-label="Menu">
+      <div class="row" style="justify-content: space-between; flex-wrap: nowrap">
+        <div class="row" style="gap: 10px; flex-wrap: nowrap; min-width: 0"><span class="av" aria-hidden="true">${initials(me)}</span><div style="min-width: 0"><b style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${nameOf(me)}</b><span class="muted" style="font-size: 12px">${ROLE[role]}</span></div></div>
+        <button class="icon" aria-label="Close menu" onClick=${function () { setUi({ nav: false }); }}>${I.x}</button>
+      </div>
+      <button class="btn" style="width: 100%; min-height: 48px" onClick=${function () { setUi({ nav: false, modal: 'choose' }); }}>${I.plus} Add to payment queue</button>
+      <div class="stack" style="gap: 4px">
+        <button class=${'navitem' + (G.ui.tab === 'queue' ? ' on' : '')} aria-current=${G.ui.tab === 'queue' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'queue', nav: false }); }}>Queue</button>
+        <button class=${'navitem' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null, nav: false }); }}>Beneficiaries</button>
+        ${usersAllowed && html`<button class=${'navitem' + (G.ui.tab === 'users' ? ' on' : '')} aria-current=${G.ui.tab === 'users' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'users', open: null, nav: false }); }}>Users & roles${regsN ? html`<span class="pill" style="margin-left: auto">${regsN}</span>` : ''}</button>`}
+      </div>
+      <div class="stack" style="gap: 4px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line-2)">
+        <button class="navitem" onClick=${function () { setUi({ nav: false, profile: true }); }}>Profile settings</button>
+        <button class="navitem" onClick=${function () { setUi({ nav: false, privacy: true }); }}>Privacy & data</button>
+        <button class="navitem" onClick=${signOut}>Sign out</button>
+      </div>
+    </nav>
+  </div>`}`;
+}
+function signOut() { window.daa.post('/api/logout').catch(function () {}); window.daa.stop(); COLS.forEach(function (c) { G.data[c] = []; }); G.me = null; G.memId = null; sessionSet(null); setUi({ nav: false, menu: false, bell: false, profile: false, open: null, modal: null, checked: {}, tab: 'queue' }); }
+function myNotifs() {
+  var me = G.me, role = me.role, top = isTop(role);
+  return G.data.notifs.filter(function (n) {
+    if (n.to === me.id) return true;
+    if (n.to === 'role:' + role) return true;
+    if (n.to === 'role:review') return top && n.from !== me.id;
+    return false;
+  }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+}
+
+// ================= QUEUE =================
+function itemsVisible() {
+  var me = G.me, role = me.role;
+  return G.data.items.filter(function (x) {
+    // Office manager, CEO and Super-admin see everything; everyone else only what they added.
+    if (isTop(role) || role === 'om') return true;
+    if (x.by === me.id) return true;
+    // Account managers also see requests from their account assistants (and from assistants with no manager yet).
+    if (role === 'am') { var a = byId(G.data.users, x.by); return !!a && a.role === 'aa' && (!a.managerId || a.managerId === me.id); }
+    return false;
+  });
+}
+var COLDEF = [
+  { key: 'pq', label: 'PQ no.', get: function (x) { return x.pqn || 0; } },
+  { key: 'kind', label: 'Type', get: function (x) { return KIND[x.kind]; } },
+  { key: 'title', label: 'Supplier / beneficiary', get: function (x) { return (x.title || '').toLowerCase(); } },
+  { key: 'client', label: 'Client', get: function (x) { return clientName(x.clientId).toLowerCase() || '￿'; } },
+  { key: 'project', label: 'Project', get: function (x) { return projectName(x.projectId).toLowerCase() || '￿'; } },
+  { key: 'date', label: 'Date', get: function (x) { return x.iso || ''; } },
+  { key: 'amount', label: 'Amount', get: function (x) { return x.amount == null ? -1 : x.amount; }, right: true },
+  { key: 'status', label: 'Status', get: function (x) { return x.status || 0; } },
+  { key: 'by', label: 'Added by', get: function (x) { return x.by ? userName(x.by).toLowerCase() : '￿'; } }
+];
+function Queue() {
+  var narrow = useNarrow();
+  var me = G.me, role = me.role, top = isTop(role), ui = G.ui, fl = ui.flt;
+  var visible = itemsVisible();
+  var notType = visible.filter(function (x) {
+    if (fl.status !== 'all' && String(x.status || 0) !== fl.status) return false;
+    if (fl.client !== 'all' && x.clientId !== fl.client) return false;
+    if (fl.project !== 'all' && x.projectId !== fl.project) return false;
+    if (fl.from && (x.iso || '') < fl.from) return false;
+    if (fl.to && (x.iso || '') > fl.to) return false;
+    return true;
+  });
+  var colD = COLDEF.filter(function (c) { return c.key === ui.sort.key; })[0] || COLDEF[0];
+  var shown = notType.filter(function (x) { return fl.type === 'all' || x.kind === fl.type; }).sort(function (a, b) { var A = colD.get(a), B = colD.get(b); return (A < B ? -1 : A > B ? 1 : 0) * ui.sort.dir; });
+  var picked = shown.filter(function (x) { return ui.checked[x.id]; });
+  var allChecked = shown.length > 0 && picked.length === shown.length;
+  var setF = function (k) { return function (e) { var p = Object.assign({}, fl); p[k] = e.target.value; if (k === 'client') p.project = 'all'; setUi({ flt: p }); }; };
+  var canRemove = function (x) { return top || ((role === 'am' || x.by === me.id) && (x.status || 0) === 0); };
+  var removable = picked.filter(canRemove);
+  var roleNote = { am: 'Account manager: you see your own requests and those of your account assistants. You can approve or deny them, approve access requests and create account assistant accounts.', aa: 'Account assistant: you see and follow the requests you added.', om: 'Office manager: you see all requests. ' + visible.filter(function (x) { return x.status === 3; }).length + ' payment(s) sent by the CEO are waiting to be paid.' }[role];
+  var activeN = ['status', 'client', 'project'].filter(function (k) { return fl[k] !== 'all'; }).length + (fl.from ? 1 : 0) + (fl.to ? 1 : 0);
+  var toggleAll = function () { var c = Object.assign({}, ui.checked); shown.forEach(function (x) { c[x.id] = !allChecked; }); setUi({ checked: c }); };
+  var docCount = picked.reduce(function (n, x) { return n + docsOf(x).length; }, 0);
+
+  async function bulk(def, list) {
+    var done = [];
+    for (var i = 0; i < list.length; i++) if (await advance(list[i], def[2])) done.push(list[i]);
+    toast(def[1] + ': ' + done.length + (done.length === 1 ? ' item' : ' items'));
+    if (def[2] === 3 && done.length) mailPayment(done);
+    if (def[2] === 4 && done.length) mailPaid(done);
+  }
+  async function doRemove() {
+    removable.forEach(function (x) { logEv('payment', 'Removed ' + pqNo(x.pqn) + ' · ' + x.title + ' (' + fmt(x.amount) + ' €)', x.id); });
+    for (var i = 0; i < removable.length; i++) await del('items', removable[i].id);
+    var ck = Object.assign({}, ui.checked); removable.forEach(function (x) { delete ck[x.id]; });
+    toast('Removed ' + removable.length + (removable.length === 1 ? ' item' : ' items') + '.');
+    setUi({ checked: ck, rmConfirm: false, open: removable.some(function (x) { return x.id === ui.open; }) ? null : ui.open });
+  }
+
+  return html`<main class="page wrap gut">
+    ${roleNote && html`<div class="alert i">${roleNote}</div>`}
+    <section class="card pad stack" aria-label="Filters">
+      <div class="row chips"><span class="lab" style="font-size: 13px; font-weight: 500; margin-right: 4px">Payment type</span>
+        ${[['all', 'All'], ['invoice', 'Invoices'], ['refund', 'Refunds'], ['contract', 'Contract payments']].map(function (t) {
+          var n = notType.filter(function (x) { return t[0] === 'all' || x.kind === t[0]; }).length;
+          return html`<button key=${t[0]} class=${'chip' + (fl.type === t[0] ? ' on' : '')} aria-pressed=${fl.type === t[0]} onClick=${function () { setUi({ flt: Object.assign({}, fl, { type: t[0] }) }); }}>${t[1]} <span style="opacity: 0.7">${n}</span></button>`;
+        })}
+      </div>
+      ${narrow && html`<button class="btn q sm" style="align-self: flex-start" aria-expanded=${!!ui.fOpen} onClick=${function () { setUi({ fOpen: !ui.fOpen }); }}>${ui.fOpen ? 'Hide filters' : 'More filters'}${activeN ? ' (' + activeN + ' on)' : ''}</button>`}
+      ${(!narrow || ui.fOpen) && html`<div class="grid fgrid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: end">
+        <${Field} label="Status"><select id="f-status" class="inp" value=${fl.status} onChange=${setF('status')}><option value="all">All statuses</option>${STATUS.map(function (s, i) { return html`<option value=${String(i)}>${s}</option>`; })}</select><//>
+        <${Field} label="Client"><select id="f-client" class="inp" value=${fl.client} onChange=${setF('client')}><option value="all">All clients</option>${G.data.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (c) { return html`<option value=${c.id}>${c.name}</option>`; })}</select><//>
+        <${Field} label="Project"><select id="f-project" class="inp" value=${fl.project} onChange=${setF('project')}><option value="all">All projects</option>${G.data.projects.filter(function (p) { return fl.client === 'all' || p.clientId === fl.client; }).map(function (p) { return html`<option value=${p.id}>${p.name}</option>`; })}</select><//>
+        <${Field} label="Date from"><input id="f-from" class="inp" type="date" value=${fl.from} onChange=${setF('from')} /><//>
+        <${Field} label="Date to"><input id="f-to" class="inp" type="date" value=${fl.to} onChange=${setF('to')} /><//>
+        <button class="btn o" onClick=${function () { setUi({ flt: blankFilter() }); }}>Clear filters</button>
+      </div>`}
+      <div class="stats num">
+        <span><span class="muted">Showing </span><b>${shown.length}</b><span class="muted"> of ${visible.length}</span></span>
+        <span><span class="muted">To review </span><b>${shown.filter(function (x) { return !x.status; }).length}</b></span>
+        <span><span class="muted">Awaiting payment </span><b>${shown.filter(function (x) { return x.status === 3; }).length}</b></span>
+        <span><span class="muted">Total shown </span><b>${fmt(shown.reduce(function (t, x) { return t + (x.amount || 0); }, 0))} €</b></span>
+      </div>
+    </section>
+
+    ${picked.length > 0 && html`<div class="bulk" role="region" aria-label="Bulk actions">
+      <b style="flex-grow: 1">${picked.length} selected</b>
+      ${ACTIONS.filter(function (a) { return roleHas(role, a[0]); }).map(function (a) {
+        var list = picked.filter(function (x) { return can(role, a[0], x.status || 0) && !(a[0] === 'send' && x.kind === 'invoice' && !acctUsable(x)); });
+        return html`<button key=${a[0]} class="btn" disabled=${!list.length} onClick=${function () { bulk(a, list); }}>${a[1]} (${list.length})</button>`;
+      })}
+      <button class="btn ol" disabled=${!!ui.busy} onClick=${function () { downloadPdf(picked); }}>${I.pdf} ${ui.busy === 'pdf' ? 'Preparing PDF…' : 'Download as PDF (' + docCount + ' docs)'}</button>
+      <button class="btn rm" disabled=${!removable.length} onClick=${function () { setUi({ rmConfirm: true }); }}>${I.trash} Remove (${removable.length})</button>
+      <button class="link" style="color: inherit; font-weight: 500" onClick=${function () { setUi({ checked: {}, rmConfirm: false }); }}>Clear</button>
+    </div>`}
+    ${ui.rmConfirm && removable.length > 0 && html`<div class="alert e row rmc" role="alertdialog" aria-label="Confirm removal" style="padding: 10px 12px 10px 16px">
+      <span style="flex-grow: 1; font-size: 14px">Remove ${removable.length} ${removable.length === 1 ? 'item' : 'items'} from the queue? This cannot be undone.${removable.length < picked.length ? ' ' + (picked.length - removable.length) + ' selected item(s) you cannot remove stay.' : ''}</span>
+      <button class="btn d" onClick=${doRemove}>Remove</button><button class="btn q" style="background: var(--surface)" onClick=${function () { setUi({ rmConfirm: false }); }}>Cancel</button>
+    </div>`}
+
+    ${narrow ? html`<${MCards} shown=${shown} visible=${visible} allChecked=${allChecked} toggleAll=${toggleAll} />` : html`<section class="card" aria-label="Received" style="overflow: hidden">
+      <div class="scroll"><table class="t" style="min-width: 1180px">
+        <thead><tr>
+          <th style="width: 44px; padding-left: 16px"><input class="ck" type="checkbox" aria-label="Select all shown" checked=${allChecked} onChange=${function () { var c = Object.assign({}, ui.checked); shown.forEach(function (x) { c[x.id] = !allChecked; }); setUi({ checked: c }); }} /></th>
+          ${COLDEF.map(function (c) {
+            var on = c.key === ui.sort.key;
+            return html`<th key=${c.key} class=${c.right ? 'r' : ''} aria-sort=${on ? (ui.sort.dir > 0 ? 'ascending' : 'descending') : 'none'}><button class="sortb" onClick=${function () { setUi({ sort: { key: c.key, dir: on ? -ui.sort.dir : 1 } }); }}>${c.label}<span class=${'ar' + (on ? ' on' : '')} aria-hidden="true">${on ? (ui.sort.dir > 0 ? '▲' : '▼') : '↕'}</span></button></th>`;
+          })}
+          <th><span class="sr">Original</span></th>
+        </tr></thead>
+        <tbody>${shown.map(function (x) {
+          var st = x.status || 0;
+          return html`<tr key=${x.id} class=${x.id === ui.open || ui.checked[x.id] ? 'sel' : ''}>
+            <td style="padding-left: 16px"><input class="ck" type="checkbox" aria-label=${'Select ' + pqNo(x.pqn)} checked=${!!ui.checked[x.id]} onChange=${function () { var c = Object.assign({}, ui.checked); c[x.id] = !c[x.id]; setUi({ checked: c }); }} /></td>
+            <td class="mono" style="font-weight: 500; white-space: nowrap">${pqNo(x.pqn)}</td>
+            <td style="white-space: nowrap">${KIND[x.kind]}</td>
+            <td><button class="namebtn" onClick=${function () { setUi({ open: x.id, denyOpen: false }); }}><b>${x.title}</b><span class="muted" style="font-size: 12px">${x.number || ''}</span></button></td>
+            <td>${clientName(x.clientId) || '—'}</td>
+            <td>${projectName(x.projectId) || '—'}</td>
+            <td class="num" style="white-space: nowrap">${x.date || '—'}</td>
+            <td class="r num" style="font-weight: 600; white-space: nowrap">${x.amount == null ? '—' : fmt(x.amount) + ' €'}</td>
+            <td><span class=${'badge s' + st}>${STATUS[st]}</span></td>
+            <td style="color: var(--ink-2)">${userName(x.by)}</td>
+            <td style="padding-right: 16px"><button class="icon" aria-label=${x.kind === 'invoice' ? 'Download original invoice' : 'Download payment request'} title=${x.kind === 'invoice' ? 'Download original invoice' : 'Download payment request'} onClick=${function () { downloadOriginal(x); }}>${I.dl}</button></td>
+          </tr>`;
+        })}</tbody>
+      </table></div>
+      ${!shown.length && html`<div class="empty">${visible.length ? 'Nothing matches these filters.' : html`Nothing in the queue yet. Use <b>Add to payment queue</b> to upload invoices or add a refund or contract payment.`}</div>`}
+    </section>`}
+  </main>`;
+}
+function MCards(p) {
+  var ui = G.ui, shown = p.shown;
+  var toggle = function (id) { var c = Object.assign({}, ui.checked); c[id] = !c[id]; setUi({ checked: c }); };
+  return html`<section class="mlist" aria-label="Received">
+    <div class="mbar">
+      <label class="row" style="gap: 10px; min-height: 44px; font-size: 13px; flex-wrap: nowrap; white-space: nowrap"><input class="ck" type="checkbox" checked=${p.allChecked} onChange=${p.toggleAll} /> Select all</label>
+      <label class="row" style="gap: 6px; margin-left: auto; font-size: 13px; flex-wrap: nowrap; min-width: 0"><span class="muted">Sort</span><select class="inp" style="width: auto; min-height: 40px; padding-block: 6px" value=${ui.sort.key} onChange=${function (e) { setUi({ sort: { key: e.target.value, dir: ui.sort.dir } }); }}>${COLDEF.map(function (c) { return html`<option value=${c.key}>${c.label}</option>`; })}</select></label>
+      <button class="icon" style="border: 1px solid var(--line); width: 40px; height: 40px" aria-label=${ui.sort.dir > 0 ? 'Sorted ascending. Switch to descending' : 'Sorted descending. Switch to ascending'} onClick=${function () { setUi({ sort: { key: ui.sort.key, dir: -ui.sort.dir } }); }}>${ui.sort.dir > 0 ? '▲' : '▼'}</button>
+    </div>
+    ${shown.map(function (x) {
+      var st = x.status || 0, cl = clientName(x.clientId), pr = projectName(x.projectId);
+      return html`<article key=${x.id} class=${'mcard' + (ui.checked[x.id] || ui.open === x.id ? ' sel' : '')}>
+        <div class="mtop">
+          <label class="ckwrap"><input class="ck" type="checkbox" aria-label=${'Select ' + pqNo(x.pqn)} checked=${!!ui.checked[x.id]} onChange=${function () { toggle(x.id); }} /></label>
+          <span class="mono" style="font-weight: 600">${pqNo(x.pqn)}</span><span class="muted">· ${KIND[x.kind]}</span>
+          <span class=${'badge s' + st} style="margin-left: auto">${STATUS[st]}</span>
+        </div>
+        <button class="namebtn open" onClick=${function () { setUi({ open: x.id, denyOpen: false }); }}><b>${x.title}</b><span class="muted" style="font-size: 12px">${x.number || ''}</span></button>
+        ${(cl || pr) && html`<div class="mmeta">${cl || '—'}${pr ? ' · ' + pr : ''}</div>`}
+        <div class="mcf"><span>${x.date || '—'} · ${userName(x.by)}</span><span class="amt num">${x.amount == null ? '—' : fmt(x.amount) + ' €'}</span>
+          <button class="icon" aria-label=${x.kind === 'invoice' ? 'Download original invoice' : 'Download payment request'} onClick=${function () { downloadOriginal(x); }}>${I.dl}</button></div>
+      </article>`;
+    })}
+    ${!shown.length && html`<div class="card empty">${p.visible.length ? 'Nothing matches these filters.' : html`Nothing in the queue yet. Tap <b>+</b> at the top to upload invoices or add a refund or contract payment.`}</div>`}
+  </section>`;
+}
+async function advance(x, status) {
+  var me = G.me, ok = await patch('items', x.id, { status: status, ['s' + status + 'By']: me.id, ['s' + status + 'At']: stamp(), ['s' + status + 'Ts']: Date.now() });
+  if (!ok) return false;
+  var t = pqNo(x.pqn) + ' · ' + x.title;
+  logEv('payment', STATUS[status] + ': ' + t, x.id);
+  if (status === 3) notify([{ to: 'role:om', itemId: x.id, from: me.id, text: t + ' was sent to payment by ' + nameOf(me) + '.' }]);
+  if (status === 4 && x.by && x.by !== me.id) notify([{ to: x.by, itemId: x.id, from: me.id, text: t + ' is paid.' }]);
+  if (status === 1 && x.by && x.by !== me.id) notify([{ to: x.by, itemId: x.id, from: me.id, text: t + ' was approved.' }]);
+  return true;
+}
+
+// ---------- email to the initiator when a payment is marked Paid (sent from the viewer's Gmail)
+function mailWhy(e) { return { server_not_connected: 'Gmail is not connected to your claude.ai account', consent_required: 'Gmail was not allowed for this app', not_granted: 'Gmail was not allowed for this app', tool_error: 'Gmail refused the message' }[e && e.code] || String((e && (e.message || e.code)) || 'unknown error').replace(/\.+$/, ''); }
+async function mailPaid(list) {
+  var me = G.me, at = stamp();
+  var mark = function (ids, m) { ids.forEach(function (id) { patch('items', id, { paidMail: m }); }); };
+  var groups = {}, noInit = [];
+  list.forEach(function (x) {
+    if (!x.by) { noInit.push(x.id); return; }
+    if (x.by === me.id) { mark([x.id], { ok: true, at: at, self: true }); return; }
+    (groups[x.by] = groups[x.by] || []).push(x);
+  });
+  if (noInit.length) mark(noInit, { ok: false, at: at, err: 'No initiator is set (choose Added by)' });
+  var keys = Object.keys(groups);
+  if (!keys.length) { if (noInit.length) toast('Marked as paid. ' + noInit.length + ' item(s) have no initiator, so no email went out.', true); return; }
+  if (!G.mcp) { keys.forEach(function (k) { mark(groups[k].map(function (x) { return x.id; }), { ok: false, at: at, err: 'Gmail is not available in this view' }); }); toast('Marked as paid, but no email went out: Gmail is not available here. Use Retry email in the preview.', true); return; }
+  setUi({ busy: 'mail' });
+  var sent = [], failed = [];
+  for (var i = 0; i < keys.length; i++) {
+    var u = byId(G.data.users, keys[i]), items = groups[keys[i]], ids = items.map(function (x) { return x.id; });
+    if (!u || !u.email || u.active === false) { mark(ids, { ok: false, at: at, err: 'The initiator has no active account with an email' }); failed.push(userName(keys[i])); continue; }
+    var total = items.reduce(function (t, x) { return t + (x.amount || 0); }, 0);
+    var subject = items.length === 1 ? 'Paid: ' + pqNo(items[0].pqn) + ' · ' + items[0].title + ' · ' + fmt(items[0].amount) + ' EUR' : 'Paid: ' + items.length + ' payments · ' + fmt(total) + ' EUR';
+    var rowsOf = function (x) {
+      var acct = payAcct(x);
+      return [['Internal no.', pqNo(x.pqn)], ['Type', KIND[x.kind]], ['Paid to', x.title], ['Amount', fmt(x.amount) + ' EUR'], ['Bank account', acct],
+        [x.kind === 'invoice' ? 'Invoice no.' : 'Reference', x.number || '—'], ['Status', 'Paid'], ['Paid on', at], ['Marked paid by', nameOf(me)],
+        ['Client / project', (clientName(x.clientId) || '—') + ' / ' + (projectName(x.projectId) || '—')], ['Submitted', x.date || '—']];
+    };
+    var greet = 'Hello ' + (u.first || nameOf(u)) + ',';
+    var lead = (items.length === 1 ? 'The payment you requested has been executed.' : 'These ' + items.length + ' payments you requested have been executed.');
+    var text = greet + '\n\n' + lead + '\n\n' + items.map(function (x) { return rowsOf(x).map(function (r) { return r[0] + ': ' + r[1]; }).join('\n'); }).join('\n\n----------\n\n') + '\n\nPayment queue: ' + APP_URL + '\n';
+    var htmlBody = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;font-size:14px;line-height:1.45"><p>' + esc(greet) + '</p><p>' + esc(lead) + '</p>' +
+      items.map(function (x) { return '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #111;margin:0 0 16px;min-width:320px">' + rowsOf(x).map(function (r, j) { return '<tr' + (j === 0 ? ' style="background:#111;color:#fff"' : '') + '><th align="left" style="border-bottom:1px solid #ddd;font-weight:600;padding-right:16px">' + esc(r[0]) + '</th><td style="border-bottom:1px solid #ddd' + (r[0] === 'Status' || r[0] === 'Amount' ? ';font-weight:700' : '') + '">' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>'; }).join('') +
+      (items.length > 1 ? '<p><b>Total paid: ' + fmt(total) + ' EUR</b></p>' : '') + '<p><a href="' + APP_URL + '">Open the payment queue</a></p></div>';
+    try {
+      await G.mcp.callTool('Gmail', 'send_message', { to: [u.email], subject: subject, body: text, htmlBody: htmlBody }, { cache: false });
+      mark(ids, { ok: true, at: at, to: [u.email], by: me.id }); sent.push(nameOf(u));
+      items.forEach(function (x) { logEv('email', 'Paid confirmation sent to ' + u.email + ' for ' + pqNo(x.pqn), x.id); });
+    } catch (e) { mark(ids, { ok: false, at: at, err: mailWhy(e) }); failed.push(nameOf(u) + ' (' + mailWhy(e) + ')'); }
+  }
+  setUi({ busy: '' });
+  if (failed.length) toast('Marked as paid. Email failed for ' + failed.join(', ') + '. Use Retry email in the preview.', true);
+  else if (sent.length) toast('Marked as paid and emailed ' + sent.join(', ') + '.');
+}
+
+// ---------- email to the office manager when something is sent to payment (sent from the viewer's Gmail)
+var APP_URL = location.origin;
+function b64(bytes) { var s = '', CH = 0x8000; for (var i = 0; i < bytes.length; i += CH) s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH)); return btoa(s); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function fieldVal(x, label) { var f = (x.fields || []).filter(function (f) { return f.label === label; })[0]; return f ? f.value : ''; }
+function payAcct(x) {
+  var a = x.kind === 'invoice' ? x.account : (fieldVal(x, 'Account number') || fieldVal(x, 'IBAN / SWIFT'));
+  if (!a) return 'not on file';
+  return acctOk(a) ? acctNorm(a) + ' · ' + (x.kind === 'invoice' && x.bank ? x.bank : bankName(a)) : a;
+}
+function paymentLines(x) {
+  var acct = payAcct(x);
+  var rows = [
+    ['Internal no.', pqNo(x.pqn)], ['Type', KIND[x.kind]], ['Pay to', x.title],
+    [x.kind === 'invoice' ? 'PIB / PDV' : 'JMBG / PIB', x.kind === 'invoice' ? (x.pib || '—') + (x.pdv ? ' / ' + x.pdv : '') : (fieldVal(x, 'JMBG / PIB') || '—')],
+    ['Bank account', acct], ['Amount', fmt(x.amount) + ' EUR'],
+    [x.kind === 'invoice' ? 'Invoice no.' : 'Reference', x.number || '—'],
+    ['Due date', x.due || '—'],
+    ['Purpose', x.kind === 'refund' ? fieldVal(x, 'Reason for refund') : x.kind === 'contract' ? (fieldVal(x, 'Purpose of payment') || '—') : 'Invoice ' + (x.number || '')],
+    ['Payment reference', fieldVal(x, 'Payment reference') || (x.kind === 'invoice' ? (x.number || '—') : '—')],
+    ['Client / project', (clientName(x.clientId) || '—') + ' / ' + (projectName(x.projectId) || '—')],
+    ['Approved for payment by', userName(x.s2By)], ['Added by', userName(x.by)]
+  ];
+  if (x.iic) rows.push(['IKOF', x.iic]);
+  return rows;
+}
+async function mailPayment(list) {
+  var me = G.me, ids = list.map(function (x) { return x.id; });
+  var mark = function (m) { ids.forEach(function (id) { patch('items', id, { mail: m }); }); };
+  var oms = G.data.users.filter(function (u) { return u.role === 'om' && u.active !== false && u.email; });
+  if (!oms.length) { mark({ ok: false, at: stamp(), err: 'No office manager account exists' }); toast('Sent to payment. No office manager account exists yet, so no email went out.', true); return; }
+  if (!G.mcp) { mark({ ok: false, at: stamp(), err: 'Gmail is not available in this view' }); toast('Sent to payment, but no email went out: Gmail is not available here. Connect Gmail in claude.ai and allow it for this app, then use Retry email.', true); return; }
+  setUi({ busy: 'mail' });
+  var items = list.map(function (x) { return Object.assign({}, x, { status: 3, s3By: me.id }); });
+  var total = items.reduce(function (t, x) { return t + (x.amount || 0); }, 0);
+  var subject = items.length === 1 ? 'Payment order ' + pqNo(items[0].pqn) + ' · ' + items[0].title + ' · ' + fmt(items[0].amount) + ' EUR' : 'Payment order · ' + items.length + ' payments · ' + fmt(total) + ' EUR';
+  var text = 'Hello,\n\n' + nameOf(me) + ' sent ' + (items.length === 1 ? 'this payment' : 'these ' + items.length + ' payments') + ' to payment. Please execute and mark them as Paid in the payment queue.\n\n' +
+    items.map(function (x) { return paymentLines(x).map(function (r) { return r[0] + ': ' + r[1]; }).join('\n'); }).join('\n\n----------\n\n') +
+    '\n\nTotal: ' + fmt(total) + ' EUR\nPayment queue: ' + APP_URL + '\n';
+  var htmlBody = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;font-size:14px;line-height:1.45">' +
+    '<p>Hello,</p><p>' + esc(nameOf(me)) + ' sent ' + (items.length === 1 ? 'this payment' : 'these ' + items.length + ' payments') + ' to payment. Please execute ' + (items.length === 1 ? 'it' : 'them') + ' and mark ' + (items.length === 1 ? 'it' : 'them') + ' as <b>Paid</b> in the payment queue.</p>' +
+    items.map(function (x) { return '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #111;margin:0 0 16px;min-width:320px">' + paymentLines(x).map(function (r, i) { return '<tr' + (i === 0 ? ' style="background:#111;color:#fff"' : '') + '><th align="left" style="border-bottom:1px solid #ddd;font-weight:600;padding-right:16px">' + esc(r[0]) + '</th><td style="border-bottom:1px solid #ddd' + (r[0] === 'Amount' || r[0] === 'Bank account' ? ';font-weight:700' : '') + '">' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>'; }).join('') +
+    '<p><b>Total: ' + fmt(total) + ' EUR</b></p><p>The attached PDF has each payment with its invoice and documents.</p><p><a href="' + APP_URL + '">Open the payment queue</a></p></div>';
+  var input = { to: oms.map(function (u) { return u.email; }), subject: subject, body: text, htmlBody: htmlBody };
+  try {
+    try { var pdf = await makePdf(items); if (pdf.bytes.length < 18000000) input.attachments = [{ filename: (items.length === 1 ? pqNo(items[0].pqn) : 'payment-order-' + todayIso()) + '.pdf', mimeType: 'application/pdf', content: b64(pdf.bytes) }]; } catch (e) {}
+    await G.mcp.callTool('Gmail', 'send_message', input, { cache: false });
+    mark({ ok: true, at: stamp(), to: input.to, by: me.id });
+    items.forEach(function (x) { logEv('email', 'Payment email sent to ' + input.to.join(', ') + ' for ' + pqNo(x.pqn), x.id); });
+    toast('Emailed ' + oms.map(nameOf).join(', ') + ' the payment details.');
+  } catch (e) {
+    var why = mailWhy(e);
+    mark({ ok: false, at: stamp(), err: why });
+    toast('Sent to payment, but the email failed: ' + why + '. Use Retry email in the preview.', true);
+  }
+  setUi({ busy: '' });
+}
+
+// ================= PREVIEW =================
+function Drawer() {
+  var me = G.me, role = me.role, top = isTop(role), x = byId(itemsVisible(), G.ui.open);
+  var ds = useState(''), denyText = ds[0], setDeny = ds[1];
+  if (!x) return null;
+  var st = x.status || 0, live = st !== 5;
+  var close = function () { setUi({ open: null, denyOpen: false }); };
+  var isQr = !!x.qrUrl, needs = x.kind === 'invoice' && !x.amount && !x.iic;
+  var canDeny = can(role, 'deny', st);
+  var noAcct = x.kind === 'invoice' && !acctUsable(x);
+  var acts = ACTIONS.filter(function (a) { return roleHas(role, a[0]); });
+  async function sendDeny() {
+    if (!denyText.trim()) return;
+    var ok = await patch('items', x.id, { status: 5, denyReason: denyText.trim(), deniedBy: me.id, s5At: stamp(), s5Ts: Date.now() });
+    if (ok) logEv('payment', 'Denied: ' + pqNo(x.pqn) + ' · ' + x.title + ' (' + denyText.trim() + ')', x.id);
+    if (ok && x.by) notify([{ to: x.by, itemId: x.id, from: me.id, text: pqNo(x.pqn) + ' · ' + x.title + ' was denied by ' + nameOf(me) + ': ' + denyText.trim() }]);
+    setDeny(''); setUi({ denyOpen: false });
+  }
+  return html`<div class="scrim" onClick=${function (e) { if (e.target === e.currentTarget) close(); }}>
+    <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="pv-title">
+      <div class="dhead">
+        <div style="flex-grow: 1; min-width: 0"><div class="eyebrow"><span class="mono" style="color: var(--ink); font-weight: 600">${pqNo(x.pqn)}</span> · ${KIND[x.kind]}</div><h2 id="pv-title" style="font-size: 20px; word-break: break-word">${x.title}</h2></div>
+        <button class="icon" aria-label="Close preview" onClick=${close}>${I.x}</button>
+      </div>
+      <div class="dbody">
+        <div class="card pad stack">
+          ${x.kind === 'invoice' && (x.pib || x.address) && html`<div class="grid" style="font-size: 13px; gap: 6px 24px">
+            <div><span class="muted">PIB </span><span class="mono">${x.pib || '—'}</span></div><div><span class="muted">PDV </span><span class="mono">${x.pdv || '—'}</span></div>
+            ${x.address && html`<div style="grid-column: 1 / -1"><span class="muted">Address </span>${x.address}</div>`}</div>`}
+          ${x.kind !== 'invoice' && html`<div class="muted" style="font-size: 13px">${x.number} · submitted ${x.date}</div>`}
+          ${x.kind === 'invoice' && html`<${AccountBox} x=${x} />`}
+          <div class="row">
+            <button class="btn" disabled=${!!G.ui.busy} onClick=${function () { downloadPdf([x]); }}>${I.pdf} ${G.ui.busy === 'pdf' ? 'Preparing PDF…' : 'Download as PDF'}</button>
+            ${x.kind === 'invoice' && x.fileId && html`<button class="btn o" onClick=${function () { downloadOriginal(x); }}>${I.dl} Original invoice</button>`}
+            ${isQr && html`<a class="btn o" href=${x.qrUrl} target="_blank" rel="noopener">${I.ext} Verify on tax portal</a>`}
+          </div>
+          <div class="stack" style="padding-top: 14px; border-top: 1px solid var(--line-2); gap: 12px">
+            <${Field} label="Added by (initiator)"><select id="pv-by" class="inp" style="max-width: 320px" disabled=${!top} value=${x.by || ''} onChange=${function (e) { var v = e.target.value; patch('items', x.id, { by: v }).then(function (r) { if (r) logEv('edit', 'Added by changed to ' + userName(v) + ' on ' + pqNo(x.pqn), x.id); }); }}><option value="">Select user</option>${G.data.users.map(function (u) { return html`<option value=${u.id}>${nameOf(u)} · ${ROLE[u.role]}</option>`; })}</select><//>
+            <div class="row">
+              ${acts.map(function (a) { var ok = can(role, a[0], st) && !(a[0] === 'send' && noAcct), done = live && st >= a[2]; return html`<button key=${a[0]} class=${'btn' + (done ? ' done' : '')} disabled=${!ok && !done} onClick=${function () { if (ok) advance(x, a[2]).then(function (r) { if (r && a[2] === 3) mailPayment([x]); if (r && a[2] === 4) mailPaid([x]); }); }}>${done ? a[1] + ' ✓' : a[1]}</button>`; })}
+              ${canDeny && html`<button class="btn do" onClick=${function () { setUi({ denyOpen: !G.ui.denyOpen }); }}>Deny</button>`}
+            </div>
+            ${!acts.length && html`<div class="muted" style="font-size: 13px">Account assistants can add requests but not approve them.</div>`}
+            ${noAcct && st === 2 && roleHas(role, 'send') && html`<div class="alert e" style="font-size: 13px">Add a valid bank account for the supplier above before sending this to payment.</div>`}
+            ${canDeny && G.ui.denyOpen && html`<div class="stack" style="gap: 10px; padding: 14px; border: 1px solid var(--danger); background: var(--danger-bg); border-radius: 10px">
+              <${Field} label=${html`Reason for denial <span class="req">*</span> · sent to ${x.by ? userName(x.by) : 'the initiator (choose Added by first)'}`}><textarea id="pv-deny" class="inp" rows="3" value=${denyText} onInput=${function (e) { setDeny(e.target.value); }}></textarea><//>
+              <div class="row"><button class="btn d" disabled=${!denyText.trim()} onClick=${sendDeny}>Deny and notify</button><button class="btn q" style="background: var(--surface)" onClick=${function () { setUi({ denyOpen: false }); }}>Cancel</button></div>
+            </div>`}
+          </div>
+          ${st === 5 ? html`<div class="alert e" role="status"><b>Denied by ${userName(x.deniedBy)}</b> · reason sent to ${x.by ? userName(x.by) : 'the initiator (not set)'}<div style="margin-top: 4px; white-space: pre-line; color: var(--ink)">${x.denyReason}</div></div>`
+            : html`<ol class="steps" aria-label="Status">${STATUS.slice(0, 5).map(function (l, i) { return html`<li class=${(i <= st ? 'done' : '') + (i === st ? ' cur' : '')}><i></i><span>${l}</span></li>`; })}</ol><div class="stepnow">Step ${st + 1} of 5 · <b>${STATUS[st]}</b></div>`}
+          ${st === 3 && html`<div style="font-size: 13px">Sent to ${G.data.users.filter(function (u) { return u.role === 'om'; }).map(nameOf).join(', ') || 'the office manager'} for payment.</div>`}
+          ${st === 4 && x.paidMail && (x.paidMail.ok
+            ? html`<div class="alert i" style="font-size: 13px">${x.paidMail.self ? 'Marked paid by the initiator, so no email was needed.' : 'Payment confirmation emailed ' + x.paidMail.at + ' to ' + (x.paidMail.to || []).join(', ') + '.'}</div>`
+            : html`<div class="alert e row" style="font-size: 13px"><span style="flex-grow: 1">Payment confirmation not sent (${x.paidMail.at}): ${x.paidMail.err}.</span>${(top || role === 'om') && html`<button class="btn sm" disabled=${G.ui.busy === 'mail'} onClick=${function () { mailPaid([x]); }}>${G.ui.busy === 'mail' ? 'Sending…' : 'Retry email'}</button>`}</div>`)}
+          ${st >= 3 && st !== 5 && x.mail && (x.mail.ok
+            ? html`<div class="alert i" style="font-size: 13px">Payment email sent ${x.mail.at} to ${(x.mail.to || []).join(', ')}.</div>`
+            : html`<div class="alert e row" style="font-size: 13px"><span style="flex-grow: 1">Payment email not sent (${x.mail.at}): ${x.mail.err}.</span>${top && html`<button class="btn sm" disabled=${G.ui.busy === 'mail'} onClick=${function () { mailPayment([x]); }}>${G.ui.busy === 'mail' ? 'Sending…' : 'Retry email'}</button>`}</div>`)}
+        </div>
+
+        ${x.kind === 'invoice' && !needs && html`<${InvoiceDetails} x=${x} />`}
+        ${needs && html`<${PendingDetails} x=${x} />`}
+        ${x.kind !== 'invoice' && html`<${RequestDetails} x=${x} />`}
+
+        <${LinkedBox} x=${x} />
+        <${History} x=${x} />
+      </div>
+    </div></div>`;
+}
+function LinkedBox(p) {
+  var x = p.x, me = G.me, st = x.status || 0;
+  var canEdit = isTop(me.role) || ((me.role === 'am' || x.by === me.id) && st <= 2);
+  var es = useState(null), ed = es[0], setEd = es[1];   // draft while editing
+  var bs = useState(false), busy = bs[0], setBusy = bs[1];
+  var est = x.estimate;
+  function open() { setEd({ clientId: x.clientId || '', newClient: '', projectId: x.projectId || '', newProject: '', estNumber: est ? (est.number || '') : '', file: null, dropEst: false, err: '' }); }
+  var set = function (p2) { setEd(Object.assign({}, ed, p2, { err: '' })); };
+  async function save() {
+    var miss = [];
+    if (ed.clientId === '__new' && !ed.newClient.trim()) miss.push('new client name');
+    if (ed.projectId === '__new' && !ed.newProject.trim()) miss.push('new project name');
+    var keepsFile = est && est.fileId && !ed.dropEst;
+    if (ed.estNumber.trim() && !ed.file && !keepsFile) miss.push('cost estimate document');
+    if (ed.file && !G.assets) miss.push('edit access to upload files (ask the owner)');
+    if (miss.length) { setEd(Object.assign({}, ed, { err: 'Still needed: ' + miss.join(', ') + '.' })); return; }
+    setBusy(true);
+    try {
+      var clientId = ed.clientId, projectId = ed.projectId;
+      if (clientId === '__new') { clientId = uid('c'); await put('clients', clientId, { name: ed.newClient.trim() }); }
+      if (projectId === '__new') { projectId = uid('p'); await put('projects', projectId, { name: ed.newProject.trim(), clientId: clientId }); }
+      var estimate = null;
+      if (ed.file) estimate = { number: ed.estNumber.trim(), fileName: ed.file.name, fileId: await uploadFile(ed.file) };
+      else if (keepsFile) estimate = Object.assign({}, est, { number: ed.estNumber.trim() });
+      var changes = [];
+      if ((x.clientId || '') !== (clientId || '')) changes.push('client');
+      if ((x.projectId || '') !== (projectId || '')) changes.push('project');
+      if (JSON.stringify(x.estimate || null) !== JSON.stringify(estimate)) changes.push('cost estimate');
+      if (await patch('items', x.id, { clientId: clientId || '', projectId: projectId || '', estimate: estimate, linkEditedBy: me.id, linkEditedAt: stamp() })) {
+        toast(changes.length ? 'Updated ' + changes.join(', ') + '.' : 'Nothing changed.'); if (changes.length) logEv('edit', 'Changed ' + changes.join(', ') + ' on ' + pqNo(x.pqn) + ': ' + [clientName(clientId), projectName(projectId), estimate ? (estimate.number || estimate.fileName) : ''].filter(Boolean).join(' / '), x.id); setEd(null);
+      }
+    } catch (e) { setEd(Object.assign({}, ed, { err: e.message || String(e) })); }
+    setBusy(false);
+  }
+  if (!ed) return html`<div class="card pad">
+    <div class="row" style="justify-content: space-between"><b>Linked to</b>${canEdit && html`<button class="btn q sm" onClick=${open}>${x.clientId || x.projectId || est ? 'Edit links' : 'Add client, project or CE'}</button>`}</div>
+    <dl class="kv" style="margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))">
+      <div><dt>Client</dt><dd>${clientName(x.clientId) || html`<span class="muted">—</span>`}</dd></div>
+      <div><dt>Project</dt><dd>${projectName(x.projectId) || html`<span class="muted">—</span>`}</dd></div>
+      <div><dt>Cost estimate</dt><dd>${est ? html`${est.number ? est.number + ' · ' : ''}${est.fileId ? html`<button class="link" style="min-height: 0; padding: 0" onClick=${function () { getBytes('/_blob/' + est.fileId).then(function (b) { saveFile(est.fileName, b); }, function (e) { toast(e.message, true); }); }}>${est.fileName}</button>` : ''}` : html`<span class="muted">None</span>`}</dd></div>
+    </dl>
+    ${x.linkEditedAt && html`<div class="muted" style="margin-top: 8px; font-size: 12px">Links last changed ${x.linkEditedAt} by ${userName(x.linkEditedBy)}</div>`}
+  </div>`;
+  var projects = G.data.projects.filter(function (p2) { return ed.clientId && ed.clientId !== '__new' && p2.clientId === ed.clientId; });
+  return html`<div class="card pad stack" aria-label="Edit links">
+    <b>Linked to</b>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
+      <div class="stack" style="gap: 8px">
+        <${Field} label="Client"><select id=${'lk-client-' + x.id} class="inp" value=${ed.clientId} onChange=${function (e) { set({ clientId: e.target.value, projectId: '', newProject: '' }); }}><option value="">No client</option>${G.data.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (c) { return html`<option value=${c.id}>${c.name}</option>`; })}<option value="__new">+ Add new client</option></select><//>
+        ${ed.clientId === '__new' && html`<${Field} label="New client name" req><input class="inp" value=${ed.newClient} onInput=${function (e) { set({ newClient: e.target.value }); }} /><//>`}
+      </div>
+      <div class="stack" style="gap: 8px">
+        <${Field} label=${html`Project ${!ed.clientId ? html`<span class="muted" style="font-weight: 400">· choose a client first</span>` : ''}`}><select id=${'lk-project-' + x.id} class="inp" disabled=${!ed.clientId} value=${ed.projectId} onChange=${function (e) { set({ projectId: e.target.value }); }}><option value="">No project</option>${projects.map(function (p2) { return html`<option value=${p2.id}>${p2.name}</option>`; })}<option value="__new">+ Add new project</option></select><//>
+        ${ed.projectId === '__new' && html`<${Field} label="New project name" req><input class="inp" value=${ed.newProject} onInput=${function (e) { set({ newProject: e.target.value }); }} /><//>`}
+      </div>
+    </div>
+    <div class="row" style="align-items: flex-end">
+      <div style="flex: 1 1 200px"><${Field} label="Cost estimate number"><input id=${'lk-ce-' + x.id} class="inp" value=${ed.estNumber} onInput=${function (e) { set({ estNumber: e.target.value }); }} /><//></div>
+      <label class="btn q" style="cursor: pointer">${I.dl} ${est && est.fileId && !ed.dropEst ? 'Replace CE file' : 'Upload CE file'}<input class="sr" type="file" onChange=${function (e) { set({ file: (e.target.files || [])[0] || null, dropEst: false }); }} /></label>
+      ${est && est.fileId && !ed.dropEst && !ed.file && html`<button class="btn q" onClick=${function () { set({ dropEst: true, estNumber: '' }); }}>Remove CE</button>`}
+    </div>
+    ${ed.file ? html`<div class="filebox" style="font-size: 13px">New file: ${ed.file.name}</div>` : est && est.fileId && !ed.dropEst ? html`<div class="muted" style="font-size: 13px">Current file: ${est.fileName}</div>` : ed.dropEst ? html`<div class="muted" style="font-size: 13px">The cost estimate will be removed from this item.</div>` : ''}
+    ${ed.err && html`<div class="alert e" role="alert">${ed.err}</div>`}
+    <div class="row"><button class="btn" disabled=${busy} onClick=${save}>${busy ? 'Saving…' : 'Save links'}</button><button class="btn q" disabled=${busy} onClick=${function () { setEd(null); }}>Cancel</button></div>
+  </div>`;
+}
+function AccountBox(p) {
+  var x = p.x, me = G.me, s = useState(null), edit = s[0], setEdit = s[1];
+  var canEdit = isTop(me.role) || me.role === 'am' || me.role === 'om' || x.by === me.id;
+  var a = x.account || '', ok = acctValid(a), confirmed = !!x.acctConfirmed;
+  async function save() {
+    var v = edit.trim();
+    if (v && !acctOk(v)) { toast('Use the format 5XX-XXXXXXXXXXXXX-XX for the account number.', true); return; }
+    if (await patch('items', x.id, { account: v ? acctNorm(v) : '', bank: v ? bankName(v) : '', acctConfirmed: !!v && !acctValid(v), acctConfirmedBy: v && !acctValid(v) ? me.id : '' })) {
+      if (v && x.pib) upsertBen({ pib: x.pib, name: x.title, account: acctNorm(v) });
+      setEdit(null); toast('Bank account saved.'); logEv('edit', 'Bank account on ' + pqNo(x.pqn) + ' set to ' + (v ? acctNorm(v) : 'none'), x.id);
+    }
+  }
+  return html`<div class="stack" style="gap: 8px; padding-top: 12px; border-top: 1px solid var(--line-2)">
+    ${edit == null ? html`<div class="row"><div style="flex-grow: 1; min-width: 0"><div class="muted" style="font-size: 12px">Bank account</div>
+        ${a ? html`<div><span class="mono" style="font-weight: 600">${a}</span> · ${x.bank || bankName(a)}${ok ? '' : confirmed ? html`<div class="muted" style="font-size: 12px">Control digits differ from the usual check · confirmed by ${userName(x.acctConfirmedBy)}</div>` : html`<div class="alert e" style="margin-top: 6px; font-size: 13px">The last 2 digits do not match the usual check, so this may be a misread. Compare it with the invoice.${canEdit ? html` <button class="btn sm" style="margin-top: 6px" onClick=${function () { patch('items', x.id, { acctConfirmed: true, acctConfirmedBy: me.id }).then(function (r) { if (r) toast('Account confirmed as printed on the invoice.'); }); }}>It matches the invoice</button>` : ''}</div>`}</div>` : html`<div class="req" style="font-weight: 600">Missing. Required before Send to payment.</div>`}</div>
+        ${canEdit && html`<button class="btn q sm" onClick=${function () { setEdit(a); }}>${a ? 'Edit' : 'Add bank account'}</button>`}</div>`
+      : html`<div class="row" style="align-items: flex-end"><div style="flex: 1 1 260px"><${Field} label="Bank account" hint=${acctHint(edit, '')}><input onBlur=${function (e) { if (acctOk(e.target.value)) setEdit(acctNorm(e.target.value)); }} id=${'acct-' + x.id} class="inp mono" inputmode="numeric" placeholder="510-0000000000000-00" value=${edit} onInput=${function (e) { setEdit(e.target.value); }} /><//></div><button class="btn sm" onClick=${save}>Save</button><button class="btn q sm" onClick=${function () { setEdit(null); }}>Cancel</button></div>`}
+  </div>`;
+}
+function InvoiceDetails(p) {
+  var x = p.x, its = x.lineItems || [];
+  var srcNote = { pdf: 'Supplier details and items were read from the invoice text; PIB, date, amount and IKOF from the QR code.', archive: 'Supplier name from the beneficiary archive, matched by PIB.', manual: 'Details entered by hand.', none: 'This file has no readable text, so supplier details and items need the tax portal.' }[x.supplierSrc || 'none'];
+  return html`<div class="stack" style="gap: 16px">
+    <div class="kpis">
+      <div class="card kpi"><div class="k">${x.iic ? 'Fiscal no.' : 'Invoice no.'}</div><div class="v">${x.iic ? x.ord : (x.number || '—')}</div></div>
+      <div class="card kpi"><div class="k">Issued</div><div class="v">${x.date || '—'}</div>${x.time && html`<div class="muted" style="font-size: 12px">${x.time}</div>`}</div>
+      <div class="card kpi"><div class="k">Due</div><div class="v">${x.due || '—'}</div></div>
+      <div class="card kpi inv"><div class="k">Amount payable</div><div class="v num">${fmt(x.amount)} €</div></div>
+    </div>
+    <div class="card" style="overflow: hidden">
+      <div class="pad row" style="justify-content: space-between; border-bottom: 1px solid var(--line)"><b>Items</b><span class="muted" style="font-size: 12px">${x.number || ''}</span></div>
+      ${its.length ? html`<div class="scroll"><table class="t" style="min-width: 480px"><thead><tr><th style="padding: 10px 20px">Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r" style="padding-right: 20px">Total</th></tr></thead>
+        <tbody>${its.map(function (it, i) { return html`<tr key=${i} class="num"><td style="padding-left: 20px; font-weight: 500">${it.name}</td><td class="r">${it.qty}</td><td class="r">${fmt(it.price)}</td><td class="r" style="padding-right: 20px; font-weight: 600">${fmt(it.total)}</td></tr>`; })}</tbody></table></div>`
+        : html`<div class="pad muted" style="font-size: 13px">No line items could be read from this file.</div>`}
+    </div>
+    ${x.iic && html`<details class="card pad"><summary style="cursor: pointer; font-weight: 600; min-height: 28px">Data read from the QR code</summary>
+      <dl class="kv mono" style="margin-top: 12px; font-size: 13px">${[['IKOF', 'iic'], ['Supplier PIB', 'pib'], ['Created', 'crtd'], ['Order no.', 'ord'], ['Business unit', 'bu'], ['Cash register', 'cr'], ['Software', 'sw']].map(function (k) { return html`<div><dt style="font-family: var(--sans)">${k[0]}</dt><dd style="word-break: break-all">${x[k[1]] || '—'}</dd></div>`; })}</dl></details>`}
+    <p class="muted" style="margin: 0; font-size: 12px">${srcNote}</p>
+  </div>`;
+}
+function RequestDetails(p) {
+  var x = p.x, me = G.me, full = isTop(me.role) || me.role === 'om' || x.by === me.id;
+  var shown = function (f) { return f.label === 'JMBG / PIB' && /^\d{13}$/.test(String(f.value).trim()) && !full ? '•••••••••' + String(f.value).trim().slice(-4) : f.value; };
+  return html`<div class="stack" style="gap: 16px">
+    <div class="card kpi inv row" style="justify-content: space-between; padding: 14px 20px"><span class="k">Amount to pay</span><span class="v num" style="font-size: 22px">${fmt(x.amount)} €</span></div>
+    <div class="card pad"><dl class="kv">${(x.fields || []).map(function (f, i) { return html`<div key=${i}><dt>${f.label}</dt><dd>${shown(f)}</dd></div>`; })}</dl></div>
+    <div class="card pad"><b>Attached documents</b>
+      ${(x.attachments || []).length ? html`<ul style="margin: 8px 0 0; padding: 0; list-style: none">${x.attachments.map(function (a) { return html`<li key=${a.fileId}><button class="link" style="min-height: 36px; padding: 0" onClick=${function () { getBytes('/_blob/' + a.fileId).then(function (b) { saveFile(a.name, b); }, function (e) { toast(e.message, true); }); }}>${a.name}</button></li>`; })}</ul>` : html`<div class="muted" style="margin-top: 6px">None attached.</div>`}
+    </div>
+  </div>`;
+}
+function PendingDetails(p) {
+  var x = p.x, s = useState(function () { return x.guess || blankDraft(); }), dr = s[0], setDr = s[1], es = useState(''), err = es[0], setErr = es[1];
+  async function save() {
+    if (!draftOk(dr)) { setErr('Add at least the name and an amount above zero.'); return; }
+    var mf = draftFields(dr), pt = { manual: true, supplierSrc: 'manual', title: mf.name, pib: mf.pib, address: mf.address, account: mf.account ? acctNorm(mf.account) : '', bank: acctOk(mf.account) ? bankName(mf.account) : '', acctConfirmed: acctOk(mf.account) && !acctValid(mf.account), number: mf.number || 'Manual entry', amount: mf.amount, lineItems: mf.items, guess: null };
+    if (mf.iso) { pt.iso = mf.iso; pt.date = mf.date; }
+    if (await patch('items', x.id, pt)) { if (mf.pib) upsertBen({ pib: mf.pib, name: mf.name, address: mf.address, account: acctOk(mf.account) ? acctNorm(mf.account) : '' }); toast('Details saved.'); logEv('edit', 'Entered details by hand on ' + pqNo(x.pqn) + ': ' + mf.name + ', ' + fmt(mf.amount) + ' €', x.id); }
+  }
+  return html`<div class="card pad stack">
+    <div><b style="font-size: 16px">No QR code could be read</b><div class="muted" style="font-size: 13px">Enter the details from ${x.fileName} by hand. A PIB that is already in the beneficiary archive fills in the name and address.</div></div>
+    <${DraftForm} dr=${dr} set=${function (f) { setErr(''); setDr(f); }} idp=${'pd-' + x.id} />
+    ${err && html`<div class="alert e" role="alert">${err}</div>`}
+    <button class="btn" style="align-self: flex-start" onClick=${save}>Save details</button>
+  </div>`;
+}
+
+// ---------- manual-entry draft
+function blankDraft(g) {
+  g = g || {};
+  return { name: g.name || '', pib: g.pib || '', address: g.address || '', account: g.account || '', number: g.number || '', date: '', amount: g.total ? String(g.total).replace('.', ',') : '',
+    items: g.items && g.items.length ? g.items.map(function (it) { return { name: it.name, qty: isNaN(it.qty) ? '' : String(it.qty), total: isNaN(it.total) ? '' : String(it.total).replace('.', ',') }; }) : [{ name: '', qty: '', total: '' }] };
+}
+function draftOk(dr) { return !!dr && !!dr.name.trim() && parseNum(dr.amount) > 0; }
+function draftFields(dr) {
+  return { name: dr.name.trim(), pib: dr.pib.trim(), address: dr.address.trim(), account: (dr.account || '').trim(), number: dr.number.trim(), iso: dr.date || '', date: isoToDate(dr.date), amount: parseNum(dr.amount),
+    items: dr.items.filter(function (it) { return it.name.trim(); }).map(function (it) { var q = parseNum(it.qty || '1') || 1, t = parseNum(it.total); return { name: it.name.trim(), qty: q, price: isNaN(t) ? null : t / q, total: isNaN(t) ? null : t }; }) };
+}
+function DraftForm(p) {
+  var dr = p.dr, set = p.set, id = p.idp;
+  var f = function (k) { return function (e) { var v = e.target.value, n = Object.assign({}, dr); n[k] = v; if (k === 'pib') { var b = benByPib(v.trim()); if (b) { if (!n.name.trim()) n.name = b.name; if (!n.address.trim()) n.address = b.address || ''; if (!(n.account || '').trim()) n.account = b.account || ''; } } set(n); }; };
+  var itf = function (i, k) { return function (e) { var its = dr.items.slice(); its[i] = Object.assign({}, its[i]); its[i][k] = e.target.value; set(Object.assign({}, dr, { items: its })); }; };
+  var match = benByPib(dr.pib.trim());
+  return html`<div class="stack" style="gap: 10px">
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px">
+      <${Field} label="Supplier / beneficiary name" req><input id=${id + '-name'} class="inp" value=${dr.name} onInput=${f('name')} /><//>
+      <${Field} label="PIB"><input id=${id + '-pib'} class="inp" inputmode="numeric" value=${dr.pib} onInput=${f('pib')} /><//>
+      <${Field} label="Bank account" hint=${acctHint(dr.account || '', '')}><input onBlur=${function (e) { if (acctOk(e.target.value)) set(Object.assign({}, dr, { account: acctNorm(e.target.value) })); }} id=${id + '-acct'} class="inp mono" inputmode="numeric" placeholder="510-0000000000000-00" value=${dr.account || ''} onInput=${f('account')} /><//>
+      <${Field} label="Invoice no."><input id=${id + '-no'} class="inp" value=${dr.number} onInput=${f('number')} /><//>
+      <${Field} label="Date"><input id=${id + '-date'} class="inp" type="date" value=${dr.date} onInput=${f('date')} /><//>
+      <${Field} label="Amount (EUR)" req><input id=${id + '-amt'} class="inp num" inputmode="decimal" placeholder="0,00" value=${dr.amount} onInput=${f('amount')} /><//>
+      <${Field} label="Address" wide><input id=${id + '-adr'} class="inp" value=${dr.address} onInput=${f('address')} /><//>
+    </div>
+    ${match && html`<div style="font-size: 12px">In the beneficiary archive: <b>${match.name}</b></div>`}
+    <b style="font-size: 12px">Items</b>
+    ${dr.items.map(function (it, i) { return html`<div key=${i} class="row" style="align-items: flex-end; gap: 6px">
+      <label class="fld" style="flex: 3 1 160px"><span>Item ${i + 1}</span><input id=${id + '-it' + i} class="inp" value=${it.name} onInput=${itf(i, 'name')} /></label>
+      <label class="fld" style="flex: 1 1 60px"><span>Qty</span><input class="inp num" inputmode="decimal" value=${it.qty} onInput=${itf(i, 'qty')} /></label>
+      <label class="fld" style="flex: 1 1 100px"><span>Total (EUR)</span><input class="inp num" inputmode="decimal" value=${it.total} onInput=${itf(i, 'total')} /></label>
+      <button class="icon" style="border: 1px solid var(--line)" aria-label=${'Remove item ' + (i + 1)} onClick=${function () { var its = dr.items.filter(function (_, j) { return j !== i; }); set(Object.assign({}, dr, { items: its.length ? its : [{ name: '', qty: '', total: '' }] })); }}>${I.x}</button>
+    </div>`; })}
+    <button class="btn o sm" style="align-self: flex-start" onClick=${function () { set(Object.assign({}, dr, { items: dr.items.concat([{ name: '', qty: '', total: '' }]) })); }}>+ Add item</button>
+  </div>`;
+}
+
+// ================= ADD TO QUEUE =================
+function blankForm() { return { beneficiary: '', benId: '', saveBen: true, payType: 'domestic', account: '', iban: '', swift: '', reason: '', purpose: '', amount: '', jmbg: '', payRef: '', legalRef: '', legalAuto: false, clientId: '', newClient: '', projectId: '', newProject: '', estNumber: '' }; }
+function AddModal() {
+  var k = G.ui.modal;
+  var fs = useState(blankForm()), form = fs[0], setForm = fs[1];
+  var sc = useState([]), scan = sc[0], setScan = sc[1];
+  var fl = useState({ attach: [], estimate: null }), files = fl[0], setFiles = fl[1];
+  var es = useState(''), err = es[0], setErr = es[1];
+  var bs = useState(false), busy = bs[0], setBusy = bs[1];
+  var ov = useState(false), over = ov[0], setOver = ov[1];
+  var scanRef = useRef(scan); scanRef.current = scan;
+  var go = function (m) { setForm(blankForm()); setScan([]); setFiles({ attach: [], estimate: null }); setErr(''); setUi({ modal: m }); };
+  var close = function () { if (!busy) go(null); };
+  var upd = function (key, p) { setScan(function (list) { return list.map(function (x) { return x.key === key ? Object.assign({}, x, p) : x; }); }); };
+  var on = function (key) { return function (e) { var v = e.target.value, p = Object.assign({}, form); p[key] = v; if (key === 'legalRef') p.legalAuto = false; setForm(p); }; };
+
+  function addFiles(list) {
+    var arr = Array.prototype.slice.call(list || []);
+    var entries = arr.map(function (f, i) { return { key: uid('f') + i, name: f.name, file: f, status: 'reading', found: [], manual: null }; });
+    setScan(function (s) { return s.concat(entries); });
+    (async function () {
+      for (var i = 0; i < entries.length; i++) {
+        try { var r = await scanFile(entries[i].file); upd(entries[i].key, { status: 'done', found: r.found, manual: r.found.length ? null : blankDraft(r.guess) }); }
+        catch (e) { upd(entries[i].key, { status: 'error', msg: e.message || String(e), manual: blankDraft() }); }
+      }
+    })();
+  }
+  function supplierDefault(q) {
+    var b = benByPib(q.tin);
+    if (b) return { name: b.name, src: 'from the beneficiary archive', from: 'archive' };
+    if (q.text && q.text.name) return { name: q.text.name, src: 'read from the invoice, edit if needed', from: 'pdf' };
+    var k2 = G.data.items.filter(function (x) { return x.pib === q.tin && x.title && x.supplierSrc !== 'none'; })[0];
+    if (k2) return { name: k2.title, src: 'from an earlier invoice', from: 'known' };
+    return { name: '', src: 'not found, please enter it', from: 'none' };
+  }
+  var inQueue = {}; G.data.items.forEach(function (x) { if (x.iic) inQueue[x.iic] = true; });
+  function acctDefault(q) { if (q.acctEdit != null) return q.acctEdit; var t = q.text || {}; if (t.account) return t.account; var b = benByPib(q.tin); return b && b.account ? b.account : ''; }
+  function acctSrc(q) { if (q.acctEdit != null) return 'edited'; if ((q.text || {}).account) return 'read from the invoice'; var b = benByPib(q.tin); return b && b.account ? 'from the beneficiary archive' : 'not found on the invoice'; }
+
+  function errors() {
+    var e = [], amt = parseNum(form.amount);
+    if (k === 'invoice') {
+      if (!scan.length) e.push('at least one invoice file');
+      if (scan.some(function (x) { return x.status === 'reading'; })) e.push('wait for QR reading to finish');
+      if (!G.assets) e.push('edit access to upload files (ask the owner)');
+    }
+    if (k === 'refund') { if (!form.beneficiary.trim()) e.push('beneficiary name and surname'); if (!form.reason.trim()) e.push('reason for refund'); }
+    if ((k === 'refund' || k === 'contract') && !(amt > 0)) e.push('amount');
+    if (k === 'contract' && !form.legalRef.trim()) e.push('legal reference');
+    if (form.clientId === '__new' && !form.newClient.trim()) e.push('new client name');
+    if (form.projectId === '__new' && !form.newProject.trim()) e.push('new project name');
+    if (form.estNumber.trim() && !files.estimate) e.push('cost estimate document');
+    if ((files.attach.length || files.estimate) && !G.assets) e.push('edit access to upload files (ask the owner)');
+    return e;
+  }
+
+  async function submit() {
+    var e = errors();
+    if (e.length) { setErr('Still needed: ' + e.join(', ') + '.'); return; }
+    setBusy(true); setErr('');
+    try {
+      var me = G.me, clientId = form.clientId, projectId = form.projectId;
+      if (clientId === '__new') { clientId = uid('c'); await put('clients', clientId, { name: form.newClient.trim() }); }
+      if (projectId === '__new') { projectId = uid('p'); await put('projects', projectId, { name: form.newProject.trim(), clientId: clientId }); }
+      var estimate = null;
+      if (files.estimate) estimate = { number: form.estNumber.trim(), fileName: files.estimate.name, fileId: await uploadFile(files.estimate) };
+      var common = { iso: todayIso(), date: isoToDate(todayIso()), clientId: clientId || '', projectId: projectId || '', estimate: estimate, status: 0, by: me.id, createdAt: stamp(), ts: Date.now() };
+      var pq = nextPq(), created = [];
+      if (k === 'invoice') {
+        var seen = Object.assign({}, inQueue);
+        for (var i = 0; i < scan.length; i++) {
+          var s = scan[i], fileId = await uploadFile(s.file);
+          if (!s.found.length) {
+            var it;
+            if (draftOk(s.manual)) {
+              var mf = draftFields(s.manual);
+              it = Object.assign({}, common, mf.iso ? { iso: mf.iso, date: mf.date } : {}, { kind: 'invoice', manual: true, supplierSrc: 'manual', title: mf.name, pib: mf.pib, address: mf.address, account: mf.account ? acctNorm(mf.account) : '', bank: acctOk(mf.account) ? bankName(mf.account) : '', acctConfirmed: acctOk(mf.account) && !acctValid(mf.account), number: mf.number || 'Manual entry', amount: mf.amount, lineItems: mf.items });
+              if (mf.pib) await upsertBen({ pib: mf.pib, name: mf.name, address: mf.address, account: acctOk(mf.account) ? acctNorm(mf.account) : '' });
+            } else it = Object.assign({}, common, { kind: 'invoice', title: s.name, number: 'Needs details', amount: null, guess: s.manual || null });
+            created.push(Object.assign(it, { fileId: fileId, fileName: s.name }));
+            continue;
+          }
+          for (var j = 0; j < s.found.length; j++) {
+            var q = s.found[j];
+            if (seen[q.iic]) continue;
+            seen[q.iic] = true;
+            var tx = q.text || {}, dn = supplierDefault(q), nm = (q.nameEdit != null ? q.nameEdit : dn.name).trim(), iso = q.crtd.slice(0, 10), av = acctDefault(q), avOk = acctOk(av);
+            if (nm) await upsertBen({ pib: q.tin, name: nm, address: tx.address || '', pdv: tx.pdv || '', account: avOk ? acctNorm(av) : '' });
+            created.push(Object.assign({}, common, { kind: 'invoice', title: nm || 'Supplier PIB ' + q.tin, supplierSrc: q.nameEdit != null ? 'manual' : dn.from,
+              pib: q.tin, pdv: tx.pdv || '', address: tx.address || '', due: tx.due || '', account: av.trim() ? acctNorm(av) : '', acctConfirmed: avOk && !acctValid(av) && q.acctEdit != null, bank: avOk ? bankName(av, q.acctEdit == null ? tx.bank : '') : '', lineItems: tx.items || [], number: tx.number || 'Fiscal no. ' + q.ord,
+              amount: isNaN(q.prc) ? null : q.prc, iso: iso, date: isoToDate(iso), time: q.crtd.slice(11, 19),
+              iic: q.iic, crtd: q.crtd, ord: q.ord, bu: q.bu, cr: q.cr, sw: q.sw, qrUrl: q.url, fileId: fileId, fileName: s.name, pdfPages: q.page == null ? null : [q.page] }));
+          }
+        }
+        if (!created.length) { toast('All of these invoices are already in the queue.'); setBusy(false); go(null); return; }
+      } else {
+        var amt = parseNum(form.amount);
+        var acct = form.payType === 'domestic' ? form.account : 'IBAN ' + (form.iban || '—') + '\nSWIFT ' + (form.swift || '—');
+        var fields = [{ label: 'Beneficiary', value: form.beneficiary }, { label: 'Type of payment', value: form.payType === 'domestic' ? 'Domestic' : 'International' }, { label: form.payType === 'domestic' ? 'Account number' : 'IBAN / SWIFT', value: acct }];
+        if (k === 'refund') fields.push({ label: 'Reason for refund', value: form.reason });
+        if (k === 'contract') { fields.push({ label: 'Purpose of payment', value: form.purpose }); fields.push({ label: 'JMBG / PIB', value: form.jmbg }); fields.push({ label: 'Payment reference', value: form.payRef }); fields.push({ label: 'Legal reference', value: form.legalRef + (form.legalAuto ? ' (auto-generated)' : '') }); }
+        fields = fields.filter(function (f) { return f.value && String(f.value).trim(); });
+        var att = [];
+        for (var a = 0; a < files.attach.length; a++) att.push({ name: files.attach[a].name, fileId: await uploadFile(files.attach[a]) });
+        created.push(Object.assign({}, common, { kind: k, title: form.beneficiary.trim() || 'Payment by contract', number: k === 'contract' ? form.legalRef.trim() : 'Refund request', amount: amt, fields: fields, attachments: att }));
+        if (form.saveBen && form.beneficiary.trim()) {
+          var bp = { name: form.beneficiary.trim(), payType: form.payType, account: acctOk(form.account) ? acctNorm(form.account) : form.account, iban: form.iban, swift: form.swift, jmbg: form.jmbg };
+          if (form.benId) await patch('bens', form.benId, bp); else await upsertBen(Object.assign({ pib: /^\d{8}$/.test(form.jmbg.trim()) ? form.jmbg.trim() : '' }, bp));
+        }
+      }
+      var ids = [];
+      for (var c = 0; c < created.length; c++) { var id = uid('i'); ids.push(id); await put('items', id, Object.assign(created[c], { pqn: pq + c })); }
+      notify(created.map(function (it, n) { return { to: 'role:review', from: me.id, itemId: ids[n], text: nameOf(me) + ' added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; }));
+      if (me.role === 'aa') {
+        var mgrs = me.managerId ? [me.managerId] : G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; }).map(function (u) { return u.id; });
+        mgrs.forEach(function (mid) { notify(created.map(function (it, n) { return { to: mid, from: me.id, itemId: ids[n], text: nameOf(me) + ' (your assistant) added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; })); });
+      }
+      created.forEach(function (it, n) { logEv('payment', 'Added ' + pqNo(pq + n) + ' · ' + it.title, ids[n]); });
+      toast('Added ' + created.length + (created.length === 1 ? ' item' : ' items') + ' to the payment queue.');
+      setBusy(false); go(null); setUi({ open: ids[0] });
+    } catch (ex) { setBusy(false); setErr(ex.message || String(ex)); }
+  }
+
+  var titles = { choose: 'What are you adding?', invoice: 'Upload invoices', refund: 'Refund request', contract: 'Payment by contract' };
+  var isReq = k === 'refund' || k === 'contract';
+  var invTotal = scan.reduce(function (t, x) { return t + x.found.length; }, 0), reading = scan.filter(function (x) { return x.status === 'reading'; }).length, none = scan.filter(function (x) { return x.status !== 'reading' && !x.found.length; }).length;
+  var projects = G.data.projects.filter(function (p) { return form.clientId && form.clientId !== '__new' && p.clientId === form.clientId; });
+
+  return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) close(); }}>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-title">
+      <div class="mhead"><div style="flex-grow: 1"><div class="muted" style="font-size: 12px">Add to payment queue · ${k === 'choose' ? 'step 1 of 2' : 'step 2 of 2'}</div><h2 id="add-title" style="font-size: 20px">${titles[k]}</h2></div><button class="icon" aria-label="Close" onClick=${close}>${I.x}</button></div>
+      <div class="mbody">
+        ${k === 'choose' && html`<div class="stack" style="gap: 10px">
+          <button class="choice" onClick=${function () { go('invoice'); }}>${I.inv}<span><b style="font-size: 15px; display: block">Upload invoices</b><span class="muted" style="font-size: 13px">One or many PDFs or photos. Every fiscal QR code is read automatically.</span></span></button>
+          <button class="choice" onClick=${function () { go('refund'); }}>${I.ref}<span><b style="font-size: 15px; display: block">Refund request</b><span class="muted" style="font-size: 13px">Reimburse a person for an expense they paid.</span></span></button>
+          <button class="choice" onClick=${function () { go('contract'); }}>${I.con}<span><b style="font-size: 15px; display: block">Payment by contract</b><span class="muted" style="font-size: 13px">Pay under a contract or decision.</span></span></button>
+        </div>`}
+
+        ${k === 'invoice' && html`<div class="stack" style="gap: 10px">
+          ${!G.assets && html`<div class="alert e">Uploading needs edit access to this app. Ask the owner to share it with you with edit access.</div>`}
+          <label class=${'drop' + (over ? ' over' : '')} onDragOver=${function (e) { e.preventDefault(); setOver(true); }} onDragLeave=${function () { setOver(false); }} onDrop=${function (e) { e.preventDefault(); setOver(false); addFiles(e.dataTransfer.files); }}>
+            ${I.up}<b style="font-size: 15px">Invoice files <span class="req">*</span></b>
+            <span class="muted" style="font-size: 13px">Choose or drop as many as you like. Every page of every file is scanned for a fiscal QR code, and each one becomes its own queue item.</span>
+            <span class="btn" style="margin-top: 4px">Choose files</span>
+            <input id="inv-files" class="sr" type="file" multiple accept="application/pdf,image/*" onChange=${function (e) { addFiles(e.target.files); e.target.value = ''; }} />
+          </label>
+          ${scan.length > 0 && html`<div role="status" style="font-size: 13px; font-weight: 600">${scan.length} ${scan.length === 1 ? 'file' : 'files'} · ${invTotal} ${invTotal === 1 ? 'invoice' : 'invoices'} found${none ? ' · ' + none + ' without QR' : ''}${reading ? ' · reading ' + reading + '…' : ''}</div>
+            <div class="muted" style="font-size: 12px">Check each supplier name. It is saved to the beneficiary archive under its PIB, so the next invoice from that supplier is named automatically.</div>`}
+          ${scan.map(function (s) {
+            return html`<div key=${s.key} class="filebox"><div style="flex: 1 1 auto; min-width: 0">
+              <div style="font-size: 13px; font-weight: 500; word-break: break-all">${s.name}</div>
+              <div style=${'font-size: 12px;' + (s.found.length ? ' font-weight: 600' : ' color: var(--muted)')}>${s.status === 'reading' ? 'Reading QR…' : s.status === 'error' ? 'Could not read: ' + s.msg : s.found.length ? s.found.length + (s.found.length === 1 ? ' invoice found' : ' invoices found') : 'No QR code found'}</div>
+              ${s.found.map(function (q, qi) {
+                var dn = supplierDefault(q), t = q.text || {};
+                return html`<div key=${qi} class="subcard" style="gap: 6px">
+                  <${Field} label=${html`Supplier name <span class="muted" style="font-weight: 400">· ${q.nameEdit != null ? 'edited, will be saved to the archive' : dn.src}</span>`}><input class="inp" placeholder="Enter the supplier name" value=${q.nameEdit != null ? q.nameEdit : dn.name} onInput=${function (e) { var fd = s.found.slice(); fd[qi] = Object.assign({}, q, { nameEdit: e.target.value }); upd(s.key, { found: fd }); }} /><//>
+                  <${Field} label=${html`Bank account <span class="muted" style="font-weight: 400">· ${acctSrc(q)}</span>`} hint=${acctHint(acctDefault(q), q.acctEdit == null ? (q.text || {}).bank : '')}><input onBlur=${function (e) { if (acctOk(e.target.value)) { var fd = s.found.slice(); fd[qi] = Object.assign({}, q, { acctEdit: acctNorm(e.target.value) }); upd(s.key, { found: fd }); } }} class="inp mono" inputmode="numeric" placeholder="510-0000000000000-00" value=${acctDefault(q)} onInput=${function (e) { var fd = s.found.slice(); fd[qi] = Object.assign({}, q, { acctEdit: e.target.value }); upd(s.key, { found: fd }); }} /><//>
+                  <div class="num" style="font-size: 12px; color: var(--ink-2)">${(t.number ? t.number + ' · ' : '') + (t.items && t.items.length ? t.items.length + (t.items.length === 1 ? ' item · ' : ' items · ') : '') + 'PIB ' + q.tin + ' · ' + isoToDate(q.crtd.slice(0, 10)) + ' · ' + fmt(q.prc) + ' €' + (inQueue[q.iic] ? ' · already in queue, skipped' : '')}</div>
+                </div>`;
+              })}
+              ${s.status !== 'reading' && !s.found.length && s.manual && html`<div class="subcard"><div style="font-size: 12px; color: var(--ink-2)">Enter the details by hand. Anything we could read is already filled in. Leave it empty to add the file and complete it later.</div><${DraftForm} dr=${s.manual} set=${function (d) { upd(s.key, { manual: d }); }} idp=${'sc-' + s.key} /></div>`}
+            </div><button class="icon" aria-label=${'Remove ' + s.name} onClick=${function () { setScan(scanRef.current.filter(function (x) { return x.key !== s.key; })); }}>${I.x}</button></div>`;
+          })}
+        </div>`}
+
+        ${isReq && html`<div class="stack">
+          <${Field} label="Beneficiary archive" hint=${G.data.bens.length ? G.data.bens.length + ' saved. Choosing one fills in the payment details.' : 'Nobody saved yet. Beneficiaries are saved here automatically when you submit.'}>
+            <select id="rq-ben" class="inp" value=${form.benId} onChange=${function (e) { var b = byId(G.data.bens, e.target.value); setForm(Object.assign({}, form, b ? { benId: b.id, beneficiary: b.name, payType: b.payType || 'domestic', account: b.account || '', iban: b.iban || '', swift: b.swift || '', jmbg: b.jmbg || b.pib || '' } : { benId: '', beneficiary: '', payType: 'domestic', account: '', iban: '', swift: '', jmbg: '' })); }}>
+              <option value="">+ New beneficiary</option>${G.data.bens.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (b) { return html`<option value=${b.id}>${b.name} · ${b.account || b.iban || (b.pib ? 'PIB ' + b.pib : 'no account')}</option>`; })}
+            </select><//>
+          <${Field} label="Beneficiary name and surname" req=${k === 'refund'}><input id="rq-name" class="inp" value=${form.beneficiary} onInput=${on('beneficiary')} /><//>
+          <fieldset style="border: 0; margin: 0; padding: 0" class="stack"><legend style="padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 500">Type of payment</legend>
+            <div class="row">
+              <label class=${'seg' + (form.payType === 'domestic' ? ' on' : '')}><input type="radio" name="pt" checked=${form.payType === 'domestic'} onChange=${function () { setForm(Object.assign({}, form, { payType: 'domestic' })); }} /> Domestic</label>
+              <label class=${'seg' + (form.payType !== 'domestic' ? ' on' : '')}><input type="radio" name="pt" checked=${form.payType !== 'domestic'} onChange=${function () { setForm(Object.assign({}, form, { payType: 'international' })); }} /> International</label>
+            </div>
+            ${form.payType === 'domestic' ? html`<${Field} label="Domestic account number" hint=${form.account ? acctHint(form.account, '') : ''}><input onBlur=${function (e) { if (acctOk(e.target.value)) setForm(Object.assign({}, form, { account: acctNorm(e.target.value) })); }} id="rq-acct" class="inp" inputmode="numeric" placeholder="e.g. 530-0000000000000-00" value=${form.account} onInput=${on('account')} /><//>`
+              : html`<div class="grid"><${Field} label="IBAN"><input id="rq-iban" class="inp" value=${form.iban} onInput=${on('iban')} /><//><${Field} label="SWIFT / BIC"><input id="rq-swift" class="inp" value=${form.swift} onInput=${on('swift')} /><//></div>`}
+          </fieldset>
+          ${k === 'refund' && html`<${Field} label="Reason for refund" req><textarea id="rq-reason" class="inp" rows="3" value=${form.reason} onInput=${on('reason')}></textarea><//>`}
+          ${k === 'contract' && html`<${Field} label="Purpose of payment"><input id="rq-purpose" class="inp" value=${form.purpose} onInput=${on('purpose')} /><//>`}
+          <div class="grid">
+            <${Field} label="Amount (EUR)" req><input id="rq-amt" class="inp num" inputmode="decimal" placeholder="0,00" value=${form.amount} onInput=${on('amount')} /><//>
+            ${k === 'contract' && html`<${Field} label="JMBG / PIB"><input id="rq-jmbg" class="inp" inputmode="numeric" value=${form.jmbg} onInput=${on('jmbg')} /><//>`}
+          </div>
+          ${k === 'contract' && html`<${Field} label="Payment reference"><input id="rq-ref" class="inp" value=${form.payRef} onInput=${on('payRef')} /><//>
+            <div class="row" style="align-items: flex-end"><div style="flex: 1 1 260px"><${Field} label="Legal reference (contract, decision)" req><input id="rq-legal" class="inp" placeholder="Contract or decision number" value=${form.legalRef} onInput=${on('legalRef')} /><//></div>
+              <button class="btn o" onClick=${function () { var n = G.data.items.filter(function (x) { return x.kind === 'contract'; }).length + 1; setForm(Object.assign({}, form, { legalRef: 'DEC-' + new Date().getFullYear() + '-' + pad(n, 3), legalAuto: true })); }}>Generate automatically</button></div>
+            ${form.legalAuto && html`<div style="margin-top: -8px; font-size: 12px; color: var(--ink-2)">Auto-generated reference, numbered from the contract payments already in the queue.</div>`}`}
+          <div class="stack" style="gap: 8px">
+            <label class="btn q" style="align-self: flex-start; cursor: pointer">${I.clip} ${k === 'contract' ? 'Attach contract or decision' : 'Attach documents'}<input id="rq-att" class="sr" type="file" multiple onChange=${function (e) { setFiles(Object.assign({}, files, { attach: files.attach.concat(Array.prototype.slice.call(e.target.files || [])) })); e.target.value = ''; }} /></label>
+            ${files.attach.map(function (f, i) { return html`<div key=${i} class="filebox row" style="font-size: 13px"><span style="flex-grow: 1; word-break: break-all">${f.name}</span><button class="icon" aria-label=${'Remove ' + f.name} onClick=${function () { setFiles(Object.assign({}, files, { attach: files.attach.filter(function (_, j) { return j !== i; }) })); }}>${I.x}</button></div>`; })}
+          </div>
+          <label class="row" style="min-height: 44px; gap: 10px"><input class="ck" type="checkbox" checked=${form.saveBen} onChange=${function () { setForm(Object.assign({}, form, { saveBen: !form.saveBen })); }} /> ${form.benId ? 'Update this beneficiary in the archive' : 'Save this beneficiary to the archive'}</label>
+        </div>`}
+
+        ${k && k !== 'choose' && html`<fieldset class="card stack" style="margin: 0; padding: 16px">
+          <legend style="padding: 0 6px; font-weight: 600">Link to client, project or cost estimate <span class="muted" style="font-weight: 400">· optional, leave empty to skip</span></legend>
+          <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
+            <div class="stack" style="gap: 8px">
+              <${Field} label="Client"><select id="ln-client" class="inp" value=${form.clientId} onChange=${function (e) { setForm(Object.assign({}, form, { clientId: e.target.value, projectId: '', newProject: '' })); }}><option value="">No client</option>${G.data.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (c) { return html`<option value=${c.id}>${c.name}</option>`; })}<option value="__new">+ Add new client</option></select><//>
+              ${form.clientId === '__new' && html`<${Field} label="New client name" req><input id="ln-newc" class="inp" value=${form.newClient} onInput=${on('newClient')} /><//>`}
+            </div>
+            <div class="stack" style="gap: 8px">
+              <${Field} label=${html`Project ${!form.clientId ? html`<span class="muted" style="font-weight: 400">· choose a client first</span>` : ''}`}><select id="ln-project" class="inp" disabled=${!form.clientId} value=${form.projectId} onChange=${on('projectId')}><option value="">No project</option>${projects.map(function (p) { return html`<option value=${p.id}>${p.name}</option>`; })}<option value="__new">+ Add new project</option></select><//>
+              ${form.projectId === '__new' && html`<${Field} label="New project name" req><input id="ln-newp" class="inp" value=${form.newProject} onInput=${on('newProject')} /><//>`}
+            </div>
+          </div>
+          <div class="row" style="align-items: flex-end">
+            <div style="flex: 1 1 220px"><${Field} label="Cost estimate number"><input id="ln-ce" class="inp" value=${form.estNumber} onInput=${on('estNumber')} /><//></div>
+            <label class="btn q" style="cursor: pointer">${I.dl} Upload cost estimate${form.estNumber.trim() ? html` <span class="req">*</span>` : ''}<input id="ln-cefile" class="sr" type="file" onChange=${function (e) { setFiles(Object.assign({}, files, { estimate: (e.target.files || [])[0] || null })); }} /></label>
+          </div>
+          ${files.estimate && html`<div class="filebox" style="font-size: 13px">${files.estimate.name}</div>`}
+        </fieldset>`}
+        ${err && html`<div class="alert e" role="alert">${err}</div>`}
+      </div>
+      ${k && k !== 'choose' && html`<div class="mfoot"><button class="btn q" disabled=${busy} onClick=${function () { go('choose'); }}>Back</button><button class="btn" disabled=${busy} onClick=${submit}>${busy ? 'Saving…' : 'Add to payment queue'}</button></div>`}
+    </div></div>`;
+}
+
+// ================= USERS =================
+function Users() {
+  var me = G.me, role = me.role, top = isTop(role), roles = creatable(role);
+  var ns = useState({ first: '', last: '', position: '', email: '', role: roles[roles.length > 2 ? 2 : 0] || 'aa', pass: '', err: '' }), nu = ns[0], setNu = ns[1];
+  var rr = useState({}), regRole = rr[0], setRegRole = rr[1];
+  var ams = G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; });
+  async function approve(r) {
+    var rl = regRole[r.id] || r.role || 'aa';
+    if (roles.indexOf(rl) < 0) rl = 'aa';
+    try { await window.daa.post('/api/regs/approve', { id: r.id, role: rl }); toast(r.first + ' ' + r.last + ' can now sign in as ' + ROLE[rl] + '.'); }
+    catch (ex) { toast(ex.message, true); }
+  }
+  async function create(e) {
+    e.preventDefault();
+    var em = nu.email.trim().toLowerCase();
+    if (!nu.first.trim() || !nu.last.trim() || !nu.position.trim()) { setNu(Object.assign({}, nu, { err: 'Add first name, last name and position.' })); return; }
+    if (!/@daa\.co\.me$/.test(em)) { setNu(Object.assign({}, nu, { err: 'Use a @daa.co.me email address.' })); return; }
+    if (G.data.users.some(function (u) { return (u.email || '').toLowerCase() === em; })) { setNu(Object.assign({}, nu, { err: 'An account with this email already exists.' })); return; }
+    if (nu.pass.length < 8) { setNu(Object.assign({}, nu, { err: 'Set a starting password of at least 8 characters. They can change it in Profile settings.' })); return; }
+    var rl = roles.indexOf(nu.role) >= 0 ? nu.role : roles[0];
+    try {
+      await window.daa.post('/api/users/create', { first: nu.first, last: nu.last, position: nu.position, email: em, role: rl, managerId: nu.managerId || '', pass: nu.pass });
+      toast('Account created for ' + em + '.'); setNu({ first: '', last: '', position: '', email: '', role: rl, pass: '', err: '' });
+    } catch (ex) { setNu(Object.assign({}, nu, { err: ex.message })); }
+  }
+  var matrix = [['See all payment requests', [1, 1, 0, 0, 1]], ['See their assistants\u2019 requests', [1, 1, 1, 0, 1]], ['Add invoices and payment requests', [1, 1, 1, 1, 1]], ['Approve document', [1, 1, 1, 0, 0]], ['Deny with reason', [1, 1, 1, 0, 0]], ['Approve for payment', [1, 1, 0, 0, 0]], ['Send to payment', [1, 1, 0, 0, 0]], ['Receive payments to execute', [0, 0, 0, 0, 1]], ['Mark as paid', [1, 1, 0, 0, 1]], ['Approve access requests', [1, 1, 1, 0, 0]], ['Create accounts', ['All', 'All', 'Assistants', 0, 0]], ['Change roles, deactivate', [1, 1, 0, 0, 0]]];
+  return html`<main class="page wrap gut">
+    <section class="card" aria-label="Access requests" style="overflow: hidden">
+      <div class="pad" style="border-bottom: 1px solid var(--line)"><h2 style="font-size: 17px">Access requests</h2><div class="muted" style="font-size: 13px">People who asked for access from the sign-in screen.</div></div>
+      ${G.data.regs.length ? G.data.regs.map(function (r) { return html`<div key=${r.id} class="row pad" style="border-bottom: 1px solid var(--line-2); gap: 10px 16px">
+        <div style="flex: 1 1 240px; min-width: 0"><b>${r.first} ${r.last}</b> <span class="muted">· ${r.position}</span><div class="muted" style="font-size: 12px">${r.email} · to confirm: ${r.approver} · ${r.time}</div></div>
+        <label class="row" style="font-size: 13px">Role <select class="inp" style="width: auto" value=${regRole[r.id] || r.role || 'aa'} onChange=${function (e) { var p = Object.assign({}, regRole); p[r.id] = e.target.value; setRegRole(p); }}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select></label>
+        <button class="btn" onClick=${function () { approve(r); }}>Approve</button><button class="btn do" onClick=${function () { del('regs', r.id).then(function (ok) { if (ok) logEv('users', 'Denied access request from ' + r.first + ' ' + r.last + ' (' + r.email + ')'); }); }}>Deny</button>
+      </div>`; }) : html`<div class="pad muted">No pending requests.</div>`}
+    </section>
+    <div class="row" style="align-items: flex-start; gap: 24px">
+      <section class="card" aria-label="Team" style="flex: 1 1 480px; min-width: 0; overflow: hidden">
+        <div class="pad" style="border-bottom: 1px solid var(--line)"><h2 style="font-size: 17px">Team</h2><div class="muted" style="font-size: 13px">${top ? 'You can create any account, change roles and deactivate people.' : 'You can create account assistant accounts.'}</div></div>
+        ${G.data.users.slice().sort(function (a, b) { return nameOf(a).localeCompare(nameOf(b)); }).map(function (u) {
+          var ed = top && u.id !== me.id;
+          return html`<div key=${u.id} class="row pad" style="border-bottom: 1px solid var(--line-2); padding-block: 12px; ${u.active === false ? 'opacity: 0.6' : ''}">
+            <span class="av l" aria-hidden="true">${initials(u)}</span>
+            <div style="flex: 1 1 200px; min-width: 0"><b>${nameOf(u)}</b>${u.active === false ? html` <span class="badge s5">Deactivated</span>` : ''}<div class="muted" style="font-size: 12px; word-break: break-all">${u.position} · ${u.email}${has2fa(u) ? ' · 2-step on' : needs2fa(u) ? ' · 2-step pending' : ''}</div></div>
+            ${top && u.id !== me.id && has2fa(u) && html`<button class="btn q sm" onClick=${function () { patch('users', u.id, { totp: { on: false, secret: '' } }).then(function (r) { if (r) { logEv('security', 'Reset two-step sign-in for ' + nameOf(u)); toast('Two-step sign-in reset for ' + nameOf(u) + '. They set it up again at next sign-in.'); } }); }}>Reset 2-step</button>`}
+            ${u.role === 'aa' && html`<label class="row" style="font-size: 13px; gap: 6px">Manager ${top ? html`<select class="inp" style="width: auto" aria-label=${'Account manager for ' + nameOf(u)} value=${u.managerId || ''} onChange=${function (e) { patch('users', u.id, { managerId: e.target.value }); }}><option value="">Not assigned</option>${ams.map(function (m) { return html`<option value=${m.id}>${nameOf(m)}</option>`; })}</select>` : html`<b>${u.managerId ? userName(u.managerId) : 'Not assigned'}</b>`}</label>`}
+            ${ed ? html`<select class="inp" style="width: auto" aria-label=${'Role for ' + nameOf(u)} value=${u.role} onChange=${function (e) { var v = e.target.value; patch('users', u.id, { role: v }).then(function (r) { if (r) logEv('users', 'Role of ' + nameOf(u) + ' changed to ' + ROLE[v]); }); }}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select>
+              <button class="btn q sm" onClick=${function () { var on = u.active === false; patch('users', u.id, { active: on }).then(function (r) { if (r) logEv('users', (on ? 'Reactivated ' : 'Deactivated ') + nameOf(u)); }); }}>${u.active === false ? 'Reactivate' : 'Deactivate'}</button>` : html`<span class="badge s0">${ROLE[u.role]}</span>`}
+          </div>`;
+        })}
+        ${roles.length > 0 && html`<form class="stack pad" style="background: var(--bg)" onSubmit=${create}>
+          <b>Create account</b>
+          <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px">
+            <${Field} label="First name"><input id="nu-first" class="inp" value=${nu.first} onInput=${inputOn(nu, setNu, 'first')} /><//>
+            <${Field} label="Last name"><input id="nu-last" class="inp" value=${nu.last} onInput=${inputOn(nu, setNu, 'last')} /><//>
+            <${Field} label="Position"><input id="nu-pos" class="inp" value=${nu.position} onInput=${inputOn(nu, setNu, 'position')} /><//>
+            <${Field} label="Email"><input id="nu-email" class="inp" type="email" placeholder="name@daa.co.me" value=${nu.email} onInput=${inputOn(nu, setNu, 'email')} /><//>
+            <${Field} label="Role"><select id="nu-role" class="inp" value=${nu.role} onChange=${inputOn(nu, setNu, 'role')}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select><//>
+            ${top && nu.role === 'aa' && html`<${Field} label="Account manager"><select id="nu-mgr" class="inp" value=${nu.managerId || ''} onChange=${inputOn(nu, setNu, 'managerId')}><option value="">Not assigned</option>${ams.map(function (m) { return html`<option value=${m.id}>${nameOf(m)}</option>`; })}</select><//>`}
+            <${Field} label="Starting password" hint="Give it to them; they change it in Profile settings."><input id="nu-pass" class="inp" type="text" autocomplete="off" value=${nu.pass} onInput=${inputOn(nu, setNu, 'pass')} /><//>
+          </div>
+          ${nu.err && html`<div class="alert e" role="alert">${nu.err}</div>`}
+          <button class="btn" type="submit" style="align-self: flex-start">Create account</button>
+        </form>`}
+      </section>
+      <section class="card" aria-label="Permissions" style="flex: 1 1 600px; min-width: 0; overflow: hidden">
+        <div class="pad" style="border-bottom: 1px solid var(--line)"><h2 style="font-size: 17px">What each role can do</h2></div>
+        <div class="scroll"><table class="t" style="min-width: 640px"><thead><tr><th style="padding: 10px 20px">Action</th>${['Super-admin', 'CEO', 'Account manager', 'Account assistant', 'Office manager'].map(function (r) { return html`<th style="text-align: center">${r}</th>`; })}</tr></thead>
+          <tbody>${matrix.map(function (m) { return html`<tr><th scope="row" style="background: none; padding: 11px 20px; font-weight: 500; white-space: normal">${m[0]}</th>${m[1].map(function (v) { return html`<td style=${'text-align: center;' + (v ? ' font-weight: 700' : ' color: var(--muted)')}>${v === 1 ? 'Yes' : (v || '—')}</td>`; })}</tr>`; })}</tbody></table></div>
+        <p class="muted" style="margin: 0; padding: 14px 20px; font-size: 12px; border-top: 1px solid var(--line-2)">Account managers see their own requests and their assistants’; assistants see only their own. Assistants with no manager assigned are visible to every account manager. The office manager, CEO and Super-admin see all requests.</p>
+      </section>
+    </div>
+    ${top && html`<${ActivityLog} />`}
+    ${top && html`<${Backups} />`}
+  </main>`;
+}
+
+// ================= BENEFICIARIES =================
+function benUses(b) {
+  var nm = (b.name || '').toLowerCase();
+  return G.data.items.filter(function (x) { return (b.pib && x.pib === b.pib) || (b.pib && fieldVal(x, 'JMBG / PIB') === b.pib) || ((x.title || '').toLowerCase() === nm); }).length;
+}
+function Beneficiaries() {
+  var narrow = useNarrow();
+  var me = G.me, top = isTop(me.role), canEdit = top || me.role === 'am' || me.role === 'om';
+  var qs = useState(''), q = qs[0], setQ = qs[1];
+  var es = useState(null), ed = es[0], setEd = es[1];        // { id|null, name, pib, account, address, err }
+  var ds = useState(null), delId = ds[0], setDel = ds[1];
+  var list = G.data.bens.filter(function (b) {
+    var t = q.trim().toLowerCase();
+    return !t || [b.name, b.pib, b.account, b.iban, b.address].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; });
+  }).sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+  function open(b) { setDel(null); setEd(b ? { id: b.id, name: b.name || '', pib: b.pib || '', account: b.account || '', address: b.address || '', err: '' } : { id: null, name: '', pib: '', account: '', address: '', err: '' }); }
+  async function save(e) {
+    e.preventDefault();
+    var name = ed.name.trim(), pib = ed.pib.trim(), acc = ed.account.trim(), adr = ed.address.trim(), fail = function (m) { setEd(Object.assign({}, ed, { err: m })); };
+    if (!name) return fail('Add the name.');
+    if (pib && !/^(\d{8}|\d{13})$/.test(pib)) return fail('PIB has 8 digits (JMBG has 13). Check the number.');
+    if (pib && G.data.bens.some(function (b) { return b.pib === pib && b.id !== ed.id; })) return fail('Another beneficiary already has PIB ' + pib + '.');
+    if (acc && !acctOk(acc)) return fail('Use the format 5XX-XXXXXXXXXXXXX-XX for the account number.');
+    var data = { name: name, pib: pib, account: acc ? acctNorm(acc) : '', bank: acc ? bankName(acc) : '', address: adr, payType: 'domestic', updatedAt: stamp(), updatedBy: me.id };
+    var ok = ed.id ? await patch('bens', ed.id, data) : await put('bens', uid('b'), Object.assign({ iban: '', swift: '', jmbg: pib, createdAt: stamp(), createdBy: me.id }, data));
+    if (ok) { toast(ed.id ? 'Saved ' + name + '.' : 'Added ' + name + '.'); logEv('data', (ed.id ? 'Edited beneficiary ' : 'Added beneficiary ') + name + (pib ? ' (PIB ' + pib + ')' : '')); setEd(null); }
+  }
+  var form = ed && html`<form class="card pad stack" onSubmit=${save} aria-label=${ed.id ? 'Edit beneficiary' : 'New beneficiary'}>
+    <b>${ed.id ? 'Edit beneficiary' : 'New beneficiary'}</b>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+      <${Field} label="Name" req><input id="bn-name" class="inp" value=${ed.name} onInput=${inputOn(ed, setEd, 'name')} /><//>
+      <${Field} label="PIB"><input id="bn-pib" class="inp mono" inputmode="numeric" value=${ed.pib} onInput=${inputOn(ed, setEd, 'pib')} /><//>
+      <${Field} label="Bank account" hint=${ed.account.trim() ? acctHint(ed.account, '') : 'Montenegrin account, 5XX-…-XX'}><input onBlur=${function (e) { if (acctOk(e.target.value)) setEd(Object.assign({}, ed, { account: acctNorm(e.target.value), err: '' })); }} id="bn-acct" class="inp mono" inputmode="numeric" placeholder="510-0000000000000-00" value=${ed.account} onInput=${inputOn(ed, setEd, 'account')} /><//>
+      <${Field} label="Address" wide><input id="bn-adr" class="inp" value=${ed.address} onInput=${inputOn(ed, setEd, 'address')} /><//>
+    </div>
+    ${ed.err && html`<div class="alert e" role="alert">${ed.err}</div>`}
+    <div class="row"><button class="btn" type="submit">${ed.id ? 'Save changes' : 'Add beneficiary'}</button><button class="btn q" type="button" onClick=${function () { setEd(null); }}>Cancel</button></div>
+  </form>`;
+  return html`<main class="page wrap gut">
+    <section class="card pad row" style="justify-content: space-between; gap: 12px" aria-label="Beneficiaries">
+      <div style="min-width: 0"><h2 style="font-size: 17px">Beneficiaries</h2><div class="muted" style="font-size: 13px">Suppliers and people we pay. Saved automatically from invoices and requests; ${canEdit ? 'you can correct them here.' : 'the CEO, account and office managers can edit them.'}</div></div>
+      <div class="row" style="flex: 1 1 320px; justify-content: flex-end">
+        <label style="flex: 1 1 220px; max-width: 360px"><span class="sr">Search beneficiaries</span><input id="bn-q" class="inp" type="search" placeholder="Search name, PIB, account, address" value=${q} onInput=${function (e) { setQ(e.target.value); }} /></label>
+        ${canEdit && html`<button class="btn" onClick=${function () { open(null); }}>${I.plus} Add beneficiary</button>`}
+      </div>
+    </section>
+    ${ed && (!ed.id || narrow) && form}
+    ${narrow ? html`<section class="mlist" aria-label="Beneficiary list">${list.map(function (b) {
+        var ok = !b.account || acctValid(b.account);
+        return html`<article key=${b.id} class=${'mcard' + (ed && ed.id === b.id ? ' sel' : '')}>
+          <div class="mtop"><b style="font-size: 15px; word-break: break-word; flex: 1 1 auto; min-width: 0">${b.name}</b><span class="muted num" style="white-space: nowrap">${benUses(b)} in queue</span></div>
+          <div class="mmeta"><span class="muted">PIB </span><span class="mono">${b.pib || '—'}</span></div>
+          <div class="mmeta">${b.account ? html`<span class="mono">${b.account}</span> · ${b.bank || bankName(b.account)}${ok ? '' : ' · control digits differ from the usual check'}` : b.iban ? html`<span class="mono">${b.iban}</span> · IBAN` : html`<span class="muted">No bank account</span>`}</div>
+          ${b.address && html`<div class="mmeta">${b.address}</div>`}
+          ${(canEdit || top) && html`<div class="row" style="margin-top: 4px">${canEdit && html`<button class="btn q sm" onClick=${function () { open(b); window.scrollTo(0, 0); }}>Edit</button>`}${top && html`<button class="btn q sm" aria-label=${'Delete ' + b.name} onClick=${function () { setEd(null); setDel(b.id); }}>${I.trash}</button>`}</div>`}
+          ${delId === b.id && html`<div class="alert e stack" role="alertdialog" aria-label="Confirm delete" style="gap: 8px"><span>Delete ${b.name} from the archive? Queue items stay as they are.</span><div class="row"><button class="btn d sm" onClick=${function () { del('bens', b.id).then(function (r) { if (r) { toast('Deleted ' + b.name + '.'); logEv('data', 'Deleted beneficiary ' + b.name); } setDel(null); }); }}>Delete</button><button class="btn q sm" style="background: var(--surface)" onClick=${function () { setDel(null); }}>Cancel</button></div></div>`}
+        </article>`; })}
+      ${!list.length && html`<div class="card empty">${G.data.bens.length ? 'No beneficiary matches that search.' : 'No beneficiaries yet. They are saved when invoices and requests are added, or add one here.'}</div>`}</section>` : html`<section class="card" style="overflow: hidden">
+      <div class="scroll"><table class="t" style="min-width: 860px">
+        <thead><tr><th style="padding: 10px 16px">Name</th><th>PIB</th><th>Bank account</th><th>Address</th><th class="r">In queue</th><th><span class="sr">Actions</span></th></tr></thead>
+        <tbody>${list.map(function (b) {
+          var ok = !b.account || acctValid(b.account);
+          return html`<tr key=${b.id} class=${ed && ed.id === b.id ? 'sel' : ''}>
+            <td style="padding-left: 16px; font-weight: 600">${b.name}</td>
+            <td class="mono">${b.pib || '—'}</td>
+            <td>${b.account ? html`<span class="mono">${b.account}</span><div class="muted" style="font-size: 12px">${b.bank || bankName(b.account)}${ok ? '' : ' · control digits differ from the usual check'}</div>` : (b.iban ? html`<span class="mono">${b.iban}</span><div class="muted" style="font-size: 12px">IBAN${b.swift ? ' · ' + b.swift : ''}</div>` : html`<span class="muted">—</span>`)}</td>
+            <td style="max-width: 280px">${b.address || html`<span class="muted">—</span>`}</td>
+            <td class="r num">${benUses(b)}</td>
+            <td style="padding-right: 16px; white-space: nowrap; text-align: right">
+              ${canEdit && html`<button class="btn q sm" onClick=${function () { open(b); }}>Edit</button>`}
+              ${top && html` <button class="btn q sm" aria-label=${'Delete ' + b.name} onClick=${function () { setEd(null); setDel(b.id); }}>${I.trash}</button>`}
+            </td>
+          </tr>
+          ${ed && ed.id === b.id && html`<tr><td colspan="6" style="background: var(--bg); padding: 12px">${form}</td></tr>`}
+          ${delId === b.id && html`<tr><td colspan="6" style="padding: 10px 16px"><div class="alert e row" role="alertdialog" aria-label="Confirm delete"><span style="flex-grow: 1">Delete ${b.name} from the archive? Queue items stay as they are.</span><button class="btn d sm" onClick=${function () { del('bens', b.id).then(function (r) { if (r) { toast('Deleted ' + b.name + '.'); logEv('data', 'Deleted beneficiary ' + b.name); } setDel(null); }); }}>Delete</button><button class="btn q sm" style="background: var(--surface)" onClick=${function () { setDel(null); }}>Cancel</button></div></td></tr>`}`;
+        })}</tbody>
+      </table></div>
+      ${!list.length && html`<div class="empty">${G.data.bens.length ? 'No beneficiary matches that search.' : 'No beneficiaries yet. They are saved when invoices and requests are added, or add one here.'}</div>`}
+    </section>`}
+  </main>`;
+}
+
+// ================= PROFILE =================
+function Profile() {
+  var me = G.me, s = useState({ first: me.first || '', last: me.last || '', position: me.position || '', cur: '', p1: '', p2: '', msg: '', ok: true }), f = s[0], set = s[1];
+  var ts = useState(false), setup = ts[0], setSetup = ts[1];
+  var close = function () { setUi({ profile: false }); };
+  async function save(e) {
+    e.preventDefault();
+    var p = { first: f.first.trim(), last: f.last.trim(), position: f.position.trim() };
+    if (f.p1 || f.p2) {
+      if (f.p1.length < 8) { set(Object.assign({}, f, { msg: 'The new password needs at least 8 characters.', ok: false })); return; }
+      if (f.p1 !== f.p2) { set(Object.assign({}, f, { msg: 'The two new passwords do not match.', ok: false })); return; }
+      try { await window.daa.post('/api/password', { cur: f.cur, next: f.p1 }); p.pw = true; }
+      catch (ex) { set(Object.assign({}, f, { msg: ex.message, ok: false })); return; }
+    }
+    var pwChanged = !!p.pw; delete p.pw;
+    if (await patch('users', me.id, p)) set(Object.assign({}, f, { cur: '', p1: '', p2: '', msg: pwChanged ? 'Saved. Your new password works from the next sign-in.' : 'Saved.', ok: true }));
+  }
+  return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) close(); }}><div class="modal" style="max-width: 560px" role="dialog" aria-modal="true" aria-labelledby="pf-title">
+    <div class="mhead"><span class="av" style="width: 44px; height: 44px; font-size: 14px" aria-hidden="true">${initials(me)}</span><div style="flex-grow: 1"><h2 id="pf-title" style="font-size: 20px">Profile settings</h2><div class="muted" style="font-size: 13px; word-break: break-all">${ROLE[me.role]} · ${me.email}</div></div><button class="icon" aria-label="Close" onClick=${close}>${I.x}</button></div>
+    <form class="mbody" onSubmit=${save}>
+      <div class="grid"><${Field} label="First name"><input id="pf-first" class="inp" value=${f.first} onInput=${inputOn(f, set, 'first')} /><//><${Field} label="Last name"><input id="pf-last" class="inp" value=${f.last} onInput=${inputOn(f, set, 'last')} /><//></div>
+      <${Field} label="Position"><input id="pf-pos" class="inp" value=${f.position} onInput=${inputOn(f, set, 'position')} /><//>
+      <fieldset class="card grid" style="margin: 0; padding: 14px 16px"><legend style="padding: 0 6px; font-weight: 600">Change password</legend>
+        <${Field} label="Current password"><input id="pf-cur" class="inp" type="password" autocomplete="current-password" value=${f.cur} onInput=${inputOn(f, set, 'cur')} /><//>
+        <${Field} label="New password"><input id="pf-p1" class="inp" type="password" autocomplete="new-password" value=${f.p1} onInput=${inputOn(f, set, 'p1')} /><//>
+        <${Field} label="Repeat new password"><input id="pf-p2" class="inp" type="password" autocomplete="new-password" value=${f.p2} onInput=${inputOn(f, set, 'p2')} /><//>
+      </fieldset>
+      ${f.msg && html`<div class=${'alert ' + (f.ok ? 'i' : 'e')} role="status">${f.msg}</div>`}
+      <div class="row" style="justify-content: space-between"><button class="btn q" type="button" onClick=${signOut}>Sign out</button><button class="btn" type="submit">Save changes</button></div>
+    </form>
+    <div class="mbody" style="border-top: 1px solid var(--line-2)">
+      <div class="row" style="justify-content: space-between"><div><b>Two-step sign-in</b><div class="muted" style="font-size: 13px">${has2fa(me) ? 'On since ' + (me.totp.at || '—') + '. You enter a code from your phone when you sign in.' : needs2fa(me) ? 'Required for your role. You will set it up at your next sign-in.' : 'Off. Turn it on for extra protection.'}</div></div>
+        ${!has2fa(me) && !setup && html`<button class="btn o sm" onClick=${function () { setSetup(true); }}>Turn on</button>`}
+        ${has2fa(me) && !needs2fa(me) && html`<button class="btn q sm" onClick=${function () { window.daa.post('/api/totp/disable').then(function () { toast('Two-step sign-in is off.'); }, function (e) { toast(e.message, true); }); }}>Turn off</button>`}
+      </div>
+      ${setup && !has2fa(me) && html`<${TotpSetup} user=${me} onDone=${function () { setSetup(false); toast('Two-step sign-in is on.'); }} onCancel=${function () { setSetup(false); }} />`}
+    </div></div></div>`;
+}
+
+// ================= PRIVACY =================
+function Privacy() {
+  var close = function () { setUi({ privacy: false }); };
+  return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) close(); }}><div class="modal" style="max-width: 640px" role="dialog" aria-modal="true" aria-labelledby="pv2-title">
+    <div class="mhead"><div style="flex-grow: 1"><div class="muted" style="font-size: 12px">Draft for review by DAA</div><h2 id="pv2-title" style="font-size: 20px">Privacy & data</h2></div><button class="icon" aria-label="Close" onClick=${close}>${I.x}</button></div>
+    <div class="mbody" style="gap: 14px; font-size: 14px; line-height: 1.55; max-width: 65ch">
+      <section><b>What the app stores</b><p style="margin: 4px 0 0">Your name, work email, position and role. For payments: supplier and beneficiary names, PIB or JMBG, bank account or IBAN, addresses, amounts, invoices and other documents you upload, and an activity log of who added, approved, paid or changed what.</p></section>
+      <section><b>Why</b><p style="margin: 4px 0 0">To record, approve and pay DAA Montenegro's outgoing payments, and to keep the accounting trail for each payment.</p></section>
+      <section><b>Who can see it</b><p style="margin: 4px 0 0">The CEO, Super-admin and Office manager see all requests. Account managers see their own and their assistants' requests; assistants see their own. Personal ID numbers (JMBG) are hidden from people who don't need them.</p></section>
+      <section><b>Where it is kept</b><p style="margin: 4px 0 0">On DAA's Cloudflare account, in a database and file storage located in Western Europe. Who can see what is checked on the server for every request. Passwords are stored only as salted hashes; sign-in sessions end after 7 days.</p></section>
+      <section><b>How long</b><p style="margin: 4px 0 0">[Retention period to be set by DAA in line with its accounting obligations.] Removed requests and deactivated accounts are kept in the activity log.</p></section>
+      <section><b>Your rights</b><p style="margin: 4px 0 0">You can ask to see, correct or delete your personal data. Contact: <span class="mono" style="user-select: all">[privacy contact]@daa.co.me</span></p></section>
+    </div></div></div>`;
+}
+
+// ================= ACTIVITY & BACKUPS =================
+var LOGTYPES = { all: 'All activity', payment: 'Payments', edit: 'Edits', users: 'Users & access', security: 'Security', signin: 'Sign-ins', email: 'Emails', data: 'Beneficiaries & data' };
+function History(p) {
+  var rows = G.data.log.filter(function (l) { return l.itemId === p.x.id; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  return html`<div class="card pad"><b>History</b>
+    ${rows.length ? html`<ol style="list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px">${rows.map(function (l) { return html`<li key=${l.id} style="font-size: 13px; display: flex; gap: 10px"><span class="muted num" style="white-space: nowrap">${l.time}</span><span style="min-width: 0">${l.text} <span class="muted">· ${userName(l.by)}</span></span></li>`; })}</ol>`
+      : html`<div class="muted" style="margin-top: 6px; font-size: 13px">No recorded activity yet. History is kept from this version on.</div>`}
+  </div>`;
+}
+function ActivityLog() {
+  var fs = useState({ type: 'all', q: '' }), f = fs[0], set = fs[1];
+  var rows = G.data.log.filter(function (l) { return (f.type === 'all' || l.type === f.type) && (!f.q.trim() || (l.text + ' ' + userName(l.by)).toLowerCase().indexOf(f.q.trim().toLowerCase()) >= 0); }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  function csv() {
+    var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+    var body = ['Time,Who,Type,What,Item'].concat(rows.map(function (l) { var it = byId(G.data.items, l.itemId); return [l.time, userName(l.by), LOGTYPES[l.type] || l.type, l.text, it ? pqNo(it.pqn) : ''].map(q).join(','); })).join('\r\n');
+    saveFile('DAA-activity-log-' + todayIso() + '.csv', '﻿' + body);
+  }
+  return html`<section class="card" aria-label="Activity log" style="overflow: hidden">
+    <div class="pad row" style="justify-content: space-between; border-bottom: 1px solid var(--line); gap: 10px">
+      <div><h2 style="font-size: 17px">Activity log</h2><div class="muted" style="font-size: 13px">Who added, approved, paid, changed or removed what. Latest ${G.data.log.length} entries.</div></div>
+      <div class="row" style="flex: 1 1 360px; justify-content: flex-end">
+        <label style="flex: 1 1 180px; max-width: 280px"><span class="sr">Search activity</span><input id="lg-q" class="inp" type="search" placeholder="Search" value=${f.q} onInput=${function (e) { set(Object.assign({}, f, { q: e.target.value })); }} /></label>
+        <label><span class="sr">Type</span><select id="lg-type" class="inp" style="width: auto" value=${f.type} onChange=${function (e) { set(Object.assign({}, f, { type: e.target.value })); }}>${Object.keys(LOGTYPES).map(function (k) { return html`<option value=${k}>${LOGTYPES[k]}</option>`; })}</select></label>
+        <button class="btn q" onClick=${csv} disabled=${!rows.length}>${I.dl} CSV</button>
+      </div>
+    </div>
+    <div style="max-height: 460px; overflow-y: auto">
+      ${rows.slice(0, 300).map(function (l) { var it = l.itemId && byId(itemsVisible(), l.itemId); return html`<div key=${l.id} class="row" style="padding: 10px 20px; border-bottom: 1px solid var(--line-2); gap: 4px 14px; font-size: 13px; flex-wrap: nowrap; align-items: flex-start">
+        <span class="muted num" style="white-space: nowrap; flex: 0 0 auto">${l.time}</span>
+        <span style="flex: 1 1 auto; min-width: 0">${it ? html`<button class="link" style="min-height: 0; padding: 0; font-weight: 500; text-align: left" onClick=${function () { setUi({ tab: 'queue', open: it.id }); }}>${l.text}</button>` : l.text}<span class="muted"> · ${userName(l.by)}</span></span>
+        <span class="badge s1" style="flex: 0 0 auto">${LOGTYPES[l.type] || l.type}</span>
+      </div>`; })}
+      ${!rows.length && html`<div class="empty">${G.data.log.length ? 'No activity matches.' : 'Nothing logged yet. Actions are logged from this version on.'}</div>`}
+    </div>
+  </section>`;
+}
+function Backups() {
+  var ps = useState(null), pending = ps[0], setPending = ps[1];
+  var bs = useState(''), busy = bs[0], setBusy = bs[1];
+  async function download() {
+    setBusy('dl');
+    try {
+      var out = await window.daa.get('/api/backup');
+      await saveFile('DAA-Pay-backup-' + todayIso() + '.json', JSON.stringify(out, null, 1));
+    } catch (e) { toast('Backup failed: ' + (e.message || e.code), true); }
+    setBusy('');
+  }
+  function pick(e) {
+    var file = (e.target.files || [])[0]; e.target.value = '';
+    if (!file) return;
+    file.text().then(function (t) {
+      var j = JSON.parse(t);
+      if (!j || j.app !== 'DAA Payment Queue' || !j.collections) throw new Error('This is not a DAA Pay backup file.');
+      var counts = COLS.map(function (c) { return [c, Object.keys(j.collections[c] || {}).length]; }).filter(function (x) { return x[1]; });
+      setPending({ data: j, counts: counts, name: file.name });
+    }).catch(function (err) { toast(err.message || 'Could not read that file.', true); });
+  }
+  async function restore() {
+    setBusy('rs');
+    try { var r = await window.daa.post('/api/import', pending.data); toast('Restored ' + r.restored + ' records.'); setPending(null); }
+    catch (ex) { toast(ex.message, true); }
+    setBusy('');
+  }
+  return html`<section class="card pad stack" aria-label="Data and backups">
+    <div><h2 style="font-size: 17px">Data & backups</h2><div class="muted" style="font-size: 13px">A backup holds every record: users, requests, beneficiaries, clients, projects, notifications and the activity log. Uploaded files stay in the app's file storage and are not inside the backup. Keep backup files private: they contain account numbers and password hashes.</div></div>
+    <div class="row">
+      <button class="btn" disabled=${!!busy} onClick=${download}>${I.dl} ${busy === 'dl' ? 'Preparing…' : 'Download backup'}</button>
+      <label class="btn o" style="cursor: pointer">Restore from backup…<input class="sr" type="file" accept="application/json,.json" onChange=${pick} /></label>
+    </div>
+    ${pending && html`<div class="alert e stack" role="alertdialog" aria-label="Confirm restore" style="gap: 8px">
+      <span><b>Restore ${pending.name}?</b> Records in the file overwrite records with the same ID (${pending.counts.map(function (x) { return x[1] + ' ' + x[0]; }).join(', ')}). Records that are not in the file are kept.</span>
+      <div class="row"><button class="btn d" disabled=${!!busy} onClick=${restore}>${busy === 'rs' ? 'Restoring…' : 'Restore'}</button><button class="btn q" style="background: var(--surface)" onClick=${function () { setPending(null); }}>Cancel</button></div>
+    </div>`}
+    <div class="muted" style="font-size: 12px">The server also keeps a daily backup for 30 days.</div>
+  </section>`;
+}
+
+// ================= APP =================
+function App() {
+  var t = useState(0); G.tick = function () { t[1](function (n) { return n + 1; }); };
+  var a = useState('login'), authView = a[0], setAuth = a[1];
+  useEffect(function () {
+    var k = function (e) { if (e.key === 'Escape') { if (G.ui.privacy) setUi({ privacy: false }); else if (G.ui.nav) setUi({ nav: false }); else if (G.ui.modal) setUi({ modal: null }); else if (G.ui.profile) setUi({ profile: false }); else if (G.ui.open) setUi({ open: null }); else if (G.ui.bell || G.ui.menu) setUi({ bell: false, menu: false }); } };
+    document.addEventListener('keydown', k); return function () { document.removeEventListener('keydown', k); };
+  }, []);
+  var body;
+  if (G.noDb) body = html`<main class="auth gut"><div class="card box"><${Logo} w=${46} /><h1 style="font-size: 20px">The database is not available here</h1><p class="muted" style="margin: 0">Open this page from its claude.ai link while signed in to your DAA organization account.</p></div></main>`;
+  else if (!G.ready) body = html`<main class="auth gut"><div class="muted">Connecting to the database…</div></main>`;
+  else if (!G.me && G.setup) body = html`<${FirstRun} />`;
+  else if (!G.me) body = authView === 'login' ? html`<${Login} onRegister=${function () { setAuth('register'); }} />` : html`<${Register} onLogin=${function () { setAuth('login'); }} />`;
+  else if (!G.dataReady) body = html`<main class="auth gut"><div class="muted">Loading your payment queue…</div></main>`;
+  else body = html`<${Header} />${G.ui.tab === 'users' && (isTop(G.me.role) || G.me.role === 'am') ? html`<${Users} />` : G.ui.tab === 'bens' ? html`<${Beneficiaries} />` : html`<${Queue} />`}
+    ${G.ui.open && html`<${Drawer} key=${G.ui.open} />`}${G.ui.modal && html`<${AddModal} key=${G.ui.modal} />`}${G.ui.profile && html`<${Profile} />`}`;
+  return html`${G.err && html`<div class="alert e gut" role="alert" style="border-radius: 0">${G.err}</div>`}${body}${G.ui.privacy && html`<${Privacy} />`}${G.ui.toast && html`<div class=${'toast' + (G.ui.toast.bad ? ' e' : '')} role="status">${G.ui.toast.text}</div>`}`;
+}
+var root = document.getElementById('app');
+root.textContent = '';
+render(html`<${App} />`, root);
+init();
+})();
+</script>
+
+</body>
+</html>

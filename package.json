@@ -1,0 +1,13 @@
+{
+  "name": "daa-pay",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DAA Pay: payment queue for DAA Montenegro (Cloudflare Worker, D1, R2).",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply daa-pay --local && wrangler dev --local",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.149.0"
+  }
+}

@@ -1,0 +1,61 @@
+name: Deploy DAA Pay
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Cloudflare secrets
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID under Settings > Secrets and variables > Actions, then run this workflow again."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Wrangler
+        run: npm install --no-audit --no-fund
+
+      - name: Create database and file bucket on first run
+        run: |
+          set -e
+          ID=$(npx wrangler d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const l=JSON.parse(s);const d=l.find(x=>x.name==="daa-pay");process.stdout.write(d?(d.uuid||d.id||""):"")})')
+          if [ -z "$ID" ]; then
+            npx wrangler d1 create daa-pay --location weur
+            ID=$(npx wrangler d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const l=JSON.parse(s);const d=l.find(x=>x.name==="daa-pay");process.stdout.write(d?(d.uuid||d.id||""):"")})')
+          fi
+          echo "D1 database: $ID"
+          sed -i "s/__D1_DATABASE_ID__/$ID/" wrangler.toml
+          npx wrangler r2 bucket list | grep -q "daa-pay-files" || npx wrangler r2 bucket create daa-pay-files --location weur
+
+      - name: Apply database migrations
+        run: npx wrangler d1 migrations apply daa-pay --remote
+
+      - name: Deploy
+        run: npx wrangler deploy
+
+      - name: Store email key (if provided)
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          if [ -n "$RESEND_API_KEY" ]; then
+            echo "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY
+          else
+            echo "RESEND_API_KEY not set: the app runs, but emails are switched off until it is added."
+          fi
