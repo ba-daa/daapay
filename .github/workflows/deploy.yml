@@ -38,26 +38,37 @@ jobs:
 
       - name: Create database and file bucket on first run
         run: |
-          set -e
-          ID=$(npx wrangler d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const l=JSON.parse(s);const d=l.find(x=>x.name==="daa-pay");process.stdout.write(d?(d.uuid||d.id||""):"")})')
+          set -o pipefail
+          # Run a wrangler command; on failure show Cloudflare's message as an error annotation.
+          w() { out=$(npx wrangler "$@" 2>&1); rc=$?; echo "$out"; if [ $rc -ne 0 ]; then echo "::error title=wrangler $1 $2::$(echo "$out" | grep -v '^\s*$' | tail -6 | tr '\n' ' ' | cut -c1-900)"; fi; return $rc; }
+          findid() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=s.slice(s.indexOf("["));const l=JSON.parse(j);const d=l.find(x=>x.name==="daa-pay");process.stdout.write(d?(d.uuid||d.id||""):"")})'; }
+          w d1 list --json > /dev/null || exit 1
+          ID=$(npx wrangler d1 list --json 2>/dev/null | findid)
           if [ -z "$ID" ]; then
-            npx wrangler d1 create daa-pay --location weur
-            ID=$(npx wrangler d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const l=JSON.parse(s);const d=l.find(x=>x.name==="daa-pay");process.stdout.write(d?(d.uuid||d.id||""):"")})')
+            w d1 create daa-pay --location weur || exit 1
+            ID=$(npx wrangler d1 list --json 2>/dev/null | findid)
           fi
+          [ -n "$ID" ] || { echo "::error::The daa-pay database could not be found after creating it."; exit 1; }
           echo "D1 database: $ID"
           sed -i "s/__D1_DATABASE_ID__/$ID/" wrangler.toml
           # The token may not have R2 rights; then the bucket must already exist (created in the dashboard).
           if npx wrangler r2 bucket list > r2.txt 2>&1; then
-            grep -q "daa-pay-files" r2.txt || npx wrangler r2 bucket create daa-pay-files --location weur
+            grep -q "daa-pay-files" r2.txt || w r2 bucket create daa-pay-files --location weur || exit 1
           else
-            echo "::warning::The API token cannot manage R2. Using the existing bucket 'daa-pay-files' (create it in the Cloudflare dashboard if it is missing)."
+            echo "::warning::The API token cannot list R2 buckets. Using the existing bucket 'daa-pay-files'."
           fi
 
       - name: Apply database migrations
-        run: npx wrangler d1 migrations apply daa-pay --remote
+        run: |
+          out=$(npx wrangler d1 migrations apply daa-pay --remote 2>&1); rc=$?; echo "$out"
+          [ $rc -eq 0 ] || { echo "::error title=migrations::$(echo "$out" | grep -v '^\s*$' | tail -6 | tr '\n' ' ' | cut -c1-900)"; exit 1; }
 
       - name: Deploy
-        run: npx wrangler deploy
+        run: |
+          out=$(npx wrangler deploy 2>&1); rc=$?; echo "$out"
+          [ $rc -eq 0 ] || { echo "::error title=deploy::$(echo "$out" | grep -v '^\s*$' | tail -8 | tr '\n' ' ' | cut -c1-900)"; exit 1; }
+          url=$(echo "$out" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1)
+          echo "::notice title=DAA Pay is live::${url:-see the deploy log for the address}"
 
       - name: Store email key (if provided)
         env:
