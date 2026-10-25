@@ -20,10 +20,14 @@ jobs:
 
       - name: Check Cloudflare secrets
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID under Settings > Secrets and variables > Actions, then run this workflow again."
+          missing=""
+          [ -z "$CLOUDFLARE_API_TOKEN" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$CLOUDFLARE_ACCOUNT_ID" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::This workflow cannot see:$missing. Add them as repository secrets under Settings > Secrets and variables > Actions > Secrets tab > Repository secrets (not Variables, not an Environment)."
             exit 1
           fi
+          echo "Both Cloudflare secrets are present (token ${#CLOUDFLARE_API_TOKEN} characters, account ID ${#CLOUDFLARE_ACCOUNT_ID} characters)."
 
       - uses: actions/setup-node@v4
         with:
