@@ -42,7 +42,7 @@ jobs:
           # Run a wrangler command; on failure show Cloudflare's message as an error annotation.
           w() { out=$(npx wrangler "$@" 2>&1); rc=$?; echo "$out"; if [ $rc -ne 0 ]; then echo "::error title=wrangler $1 $2::$(echo "$out" | grep -v '^\s*$' | tail -6 | tr '\n' ' ' | cut -c1-900)"; fi; return $rc; }
           findid() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=s.slice(s.indexOf("["));const l=JSON.parse(j);const d=l.find(x=>x.name==="daa-pay");process.stdout.write(d?(d.uuid||d.id||""):"")})'; }
-          w d1 list --json > /dev/null || exit 1
+          w d1 list --json || exit 1
           ID=$(npx wrangler d1 list --json 2>/dev/null | findid)
           if [ -z "$ID" ]; then
             w d1 create daa-pay --location weur || exit 1
