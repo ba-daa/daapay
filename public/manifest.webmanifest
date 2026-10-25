@@ -1,7 +1,7 @@
 {
   "id": "/",
   "name": "DAA Pay",
-  "short_name": "DPay",
+  "short_name": "DAA Pay",
   "description": "DAA Montenegro payment queue: invoices, refunds and contract payments.",
   "start_url": "/",
   "scope": "/",
