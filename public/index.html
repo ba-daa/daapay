@@ -6,8 +6,12 @@
 <meta name="theme-color" content="#111111">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="DAA Pay">
-<link rel="icon" type="image/png" href="/static/icon-192.png">
-<link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="application-name" content="DAA Pay">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <title>DAA Pay</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -287,7 +291,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news'];
-var APP_VERSION = '0.2.0';
+var APP_VERSION = '0.3.0';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -438,13 +442,22 @@ function onSignedIn(u) {
   setUi({ tab: 'queue', open: null });
 }
 
+// ---------- installable app
+var installEvt = null;
+window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEvt = e; redraw(); });
+window.addEventListener('appinstalled', function () { installEvt = null; try { localStorage.setItem('daa-installed', '1'); } catch (e) {} redraw(); });
+if ('serviceWorker' in navigator) window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); });
+function isInstalled() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+function platform() { var ua = navigator.userAgent; if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios'; if (/Android/.test(ua)) return 'android'; return 'desktop'; }
+
 async function init() {
   var r = await Promise.all([window.claude.use('db'), window.claude.use('assets'), window.claude.use('downloads'), window.claude.use('mcp')]);
   G.db = r[0]; G.assets = r[1]; G.downloads = r[2]; G.mcp = r[3];
   window.daa.onSignedOut(function () { if (G.me) { G.me = null; G.memId = null; setUi({ open: null, modal: null, profile: false, nav: false }); toast('You were signed out. Please sign in again.', true); } });
   var qs = new URLSearchParams(location.search), tk = qs.get('invite') || qs.get('reset');
   if (tk) G.tokenView = { t: tk, kind: qs.get('invite') ? 'invite' : 'reset' };
-  try { var m = await window.daa.get('/api/me'); if (m.user) onSignedIn(m.user); else G.setup = !!m.setup; } catch (e) { G.err = 'DAA Pay could not reach its server. Check your connection and reload the page.'; }
+  try { var m = await window.daa.get('/api/me'); if (m.user) onSignedIn(m.user); else G.setup = !!m.setup; } catch (e) { G.err = navigator.onLine === false ? 'You are offline. DAA Pay opens again as soon as you are connected.' : 'DAA Pay could not reach its server. Check your connection and reload the page.'; window.addEventListener('online', function () { location.reload(); }); }
+  if (qs.get('add') && G.me) { G.ui.modal = 'choose'; try { history.replaceState(null, '', '/'); } catch (e) {} }
   G.ready = true; redraw();
 }
 
@@ -769,6 +782,35 @@ function FirstRun() {
   </div></main>`;
 }
 
+// ================= INSTALL THE APP =================
+function InstallHint() {
+  var narrow = useNarrow(), hs = useState(function () { try { return !!localStorage.getItem('daa-install-hint-off'); } catch (e) { return false; } }), off = hs[0], setOff = hs[1];
+  if (!narrow || off || isInstalled()) return null;
+  function close() { setOff(true); try { localStorage.setItem('daa-install-hint-off', '1'); } catch (e) {} }
+  return html`<div class="card row" style="padding: 10px 12px; gap: 12px; flex-wrap: nowrap">
+    <img src="/static/icon-192.png" width="40" height="40" alt="" style="border-radius: 9px; flex: none" />
+    <div style="flex: 1; min-width: 0; font-size: 14px"><b>Get the DAA Pay app</b><div class="muted" style="font-size: 12px">Opens from your home screen, full screen.</div></div>
+    <button class="btn sm" onClick=${function () { setUi({ install: true }); }}>Install</button>
+    <button class="icon" aria-label="Not now" onClick=${close}>${I.x}</button>
+  </div>`;
+}
+function InstallApp() {
+  var close = function () { setUi({ install: false }); }, pf = platform(), done = isInstalled();
+  async function go() { if (!installEvt) return; installEvt.prompt(); try { var c = await installEvt.userChoice; if (c.outcome === 'accepted') { installEvt = null; toast('DAA Pay is installed. Find it on your home screen.'); close(); } } catch (e) {} }
+  var share = html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Share" style="vertical-align: -3px"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>`;
+  var steps = pf === 'ios' ? [html`Open <b>${location.host}</b> in <b>Safari</b> (or Chrome).`, html`Tap the Share button ${share} (bottom of the screen in Safari, top right in Chrome).`, html`Scroll down and tap <b>Add to Home Screen</b>.`, html`Keep the name <b>DAA Pay</b> and tap <b>Add</b>.`]
+    : pf === 'android' ? [html`Open <b>${location.host}</b> in <b>Chrome</b>.`, html`Tap the menu <b>⋮</b> at the top right.`, html`Tap <b>Install app</b> (or <b>Add to Home screen</b>), then <b>Install</b>.`]
+    : [html`In <b>Chrome</b> or <b>Edge</b>, click the install icon at the right end of the address bar, or open the browser menu and choose <b>Install DAA Pay</b>.`, html`DAA Pay then opens in its own window and can be pinned to the taskbar or Dock.`];
+  return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) close(); }}><div class="modal" style="max-width: 520px" role="dialog" aria-modal="true" aria-labelledby="ia-title">
+    <div class="mhead"><img src="/static/icon-192.png" width="44" height="44" alt="" style="border-radius: 10px" /><div style="flex-grow: 1"><h2 id="ia-title" style="font-size: 20px">Install DAA Pay</h2><div class="muted" style="font-size: 13px">Free · no App Store needed</div></div><button class="icon" aria-label="Close" onClick=${close}>${I.x}</button></div>
+    <div class="mbody" style="gap: 14px">
+      ${done ? html`<div class="alert i">DAA Pay is already installed on this device.</div>`
+        : installEvt ? html`<p style="margin: 0">Add DAA Pay to this device. It opens from its own icon, full screen, and stays signed in.</p><button class="btn" style="align-self: flex-start" onClick=${go}>Install DAA Pay</button>`
+        : html`<ol class="stack" style="gap: 10px; margin: 0; padding-left: 22px; font-size: 15px; line-height: 1.5">${steps.map(function (st, i) { return html`<li key=${i}>${st}</li>`; })}</ol>`}
+      <div class="muted" style="font-size: 13px; border-top: 1px solid var(--line-2); padding-top: 12px">The app is the same DAA Pay: same account, same data, always up to date. Sign in once after installing.</div>
+    </div></div></div>`;
+}
+
 // ================= ANNOUNCEMENTS =================
 var LEVELS = [['critical', 'Critical'], ['important', 'Important'], ['fyi', 'FYI']];
 var LEVEL_RANK = { critical: 0, important: 1, fyi: 2 };
@@ -866,7 +908,7 @@ var HELP = [
   { id: 'start', title: 'Getting started', text: [
     'Sign in with your work email and password. The CEO and Super-admin also enter a 6-digit code from an authenticator app on their phone.',
     'On a phone, everything is in the ☰ menu at the top right: Queue, Beneficiaries, Users & roles (for managers), your profile and Help & support. On a computer the sections are tabs in the header, and your profile is under your initials.',
-    'Add DAA Pay to your phone like an app. iPhone: open it in Safari, tap Share, then Add to Home Screen. Android: open it in Chrome, tap ⋮, then Install app or Add to Home screen.'] },
+    'Install DAA Pay on your phone like an app: menu → Install the app shows the steps for your phone. iPhone: in Safari tap Share, then Add to Home Screen. Android: in Chrome tap ⋮, then Install app. Long-press the icon for a shortcut to Add to payment queue.'] },
   { id: 'invoices', title: 'Adding invoices', text: [
     'Tap + (or Add to payment queue) and choose Upload invoices. Pick one or many PDFs or photos.',
     'Every page is scanned for the fiscal QR code. Each QR code becomes its own item in the queue with its amount, date, supplier PIB and IKOF. Supplier name, address, invoice number, due date, bank account and items are read from the invoice text.',
@@ -1113,7 +1155,7 @@ function Header() {
     </div>
     <div class="acctw" style="position: relative">
       <button class="acct" aria-expanded=${G.ui.menu} aria-label="Account menu" onClick=${function () { setUi({ menu: !G.ui.menu, bell: false }); }}><span class="av" aria-hidden="true">${initials(me)}</span><span class="t"><b style="font-size: 13px">${nameOf(me)}</b><span class="muted" style="font-size: 11px">${ROLE[role]}</span></span></button>
-      ${G.ui.menu && html`<div class="pop" style="width: 220px; padding: 6px"><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ profile: true, menu: false }); }}>Profile settings</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ privacy: true, menu: false }); }}>Privacy & data</button><div class="muted" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 12px 2px; border-top: 1px solid var(--line-2); margin-top: 4px">Help & support</div><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ help: true, menu: false }); }}>Help center</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ bug: true, menu: false }); }}>Report a bug</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${signOut}>Sign out</button></div>`}
+      ${G.ui.menu && html`<div class="pop" style="width: 220px; padding: 6px"><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ profile: true, menu: false }); }}>Profile settings</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ privacy: true, menu: false }); }}>Privacy & data</button>${!isInstalled() && html`<button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ install: true, menu: false }); }}>Install the app</button>`}<div class="muted" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 12px 2px; border-top: 1px solid var(--line-2); margin-top: 4px">Help & support</div><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ help: true, menu: false }); }}>Help center</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${function () { setUi({ bug: true, menu: false }); }}>Report a bug</button><button class="btn q" style="width: 100%; justify-content: flex-start; border: 0" onClick=${signOut}>Sign out</button></div>`}
     </div>
     <button class="icon burger" aria-label="Open menu" aria-expanded=${!!G.ui.nav} aria-controls="navsheet" onClick=${function () { setUi({ nav: true, bell: false, menu: false }); }}>${I.menu}</button>
   </div></header>
@@ -1131,6 +1173,7 @@ function Header() {
       </div>
       <div class="stack" style="gap: 4px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line-2)">
         <button class="navitem" onClick=${function () { setUi({ nav: false, profile: true }); }}>Profile settings</button>
+        ${!isInstalled() && html`<button class="navitem" onClick=${function () { setUi({ nav: false, install: true }); }}>Install the app</button>`}
         <button class="navitem" aria-expanded=${!!G.ui.helpOpen} onClick=${function () { setUi({ helpOpen: !G.ui.helpOpen }); }}>Help & support<span aria-hidden="true" style="margin-left: auto; font-size: 13px">${G.ui.helpOpen ? '▾' : '▸'}</span></button>
         ${G.ui.helpOpen && html`<div class="stack" style="gap: 2px; padding-left: 14px; border-left: 2px solid var(--line); margin-left: 14px">
           <button class="navitem sub" onClick=${function () { setUi({ nav: false, help: true }); }}>Help center</button>
@@ -1217,6 +1260,7 @@ function Queue() {
 
   return html`<main class="page wrap gut">
     <${Announcements} />
+    <${InstallHint} />
     ${roleNote && html`<div class="alert i">${roleNote}</div>`}
     <section class="card pad stack" aria-label="Filters">
       <div class="row chips"><span class="lab" style="font-size: 13px; font-weight: 500; margin-right: 4px">Payment type</span>
@@ -2196,7 +2240,7 @@ function App() {
   var t = useState(0); G.tick = function () { t[1](function (n) { return n + 1; }); };
   var a = useState('login'), authView = a[0], setAuth = a[1];
   useEffect(function () {
-    var k = function (e) { if (e.key === 'Escape') { if (G.ui.help || G.ui.bug) setUi({ help: false, bug: false }); else if (G.ui.privacy) setUi({ privacy: false }); else if (G.ui.nav) setUi({ nav: false }); else if (G.ui.modal) setUi({ modal: null }); else if (G.ui.profile) setUi({ profile: false }); else if (G.ui.open) setUi({ open: null }); else if (G.ui.bell || G.ui.menu) setUi({ bell: false, menu: false }); } };
+    var k = function (e) { if (e.key === 'Escape') { if (G.ui.help || G.ui.bug || G.ui.install) setUi({ help: false, bug: false, install: false }); else if (G.ui.privacy) setUi({ privacy: false }); else if (G.ui.nav) setUi({ nav: false }); else if (G.ui.modal) setUi({ modal: null }); else if (G.ui.profile) setUi({ profile: false }); else if (G.ui.open) setUi({ open: null }); else if (G.ui.bell || G.ui.menu) setUi({ bell: false, menu: false }); } };
     document.addEventListener('keydown', k); return function () { document.removeEventListener('keydown', k); };
   }, []);
   var body;
@@ -2208,7 +2252,7 @@ function App() {
   else if (!G.dataReady) body = html`<main class="auth gut"><div class="muted">Loading your payment queue…</div></main>`;
   else body = html`<${Header} />${G.ui.tab === 'users' && (isTop(G.me.role) || G.me.role === 'am') ? html`<${Users} />` : G.ui.tab === 'bens' ? html`<${Beneficiaries} />` : html`<${Queue} />`}
     ${G.ui.open && html`<${Drawer} key=${G.ui.open} />`}${G.ui.modal && html`<${AddModal} key=${G.ui.modal} />`}${G.ui.profile && html`<${Profile} />`}`;
-  return html`${G.err && html`<div class="alert e gut" role="alert" style="border-radius: 0">${G.err}</div>`}${body}${G.ui.privacy && html`<${Privacy} />`}${G.ui.help && html`<${HelpCenter} />`}${G.ui.bug && html`<${ReportBug} />`}${G.ui.toast && html`<div class=${'toast' + (G.ui.toast.bad ? ' e' : '')} role="status">${G.ui.toast.text}</div>`}`;
+  return html`${G.err && html`<div class="alert e gut" role="alert" style="border-radius: 0">${G.err}</div>`}${body}${G.ui.privacy && html`<${Privacy} />`}${G.ui.help && html`<${HelpCenter} />`}${G.ui.install && html`<${InstallApp} />`}${G.ui.bug && html`<${ReportBug} />`}${G.ui.toast && html`<div class=${'toast' + (G.ui.toast.bad ? ' e' : '')} role="status">${G.ui.toast.text}</div>`}`;
 }
 var root = document.getElementById('app');
 root.textContent = '';

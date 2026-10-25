@@ -1,12 +1,22 @@
 {
+  "id": "/",
   "name": "DAA Pay",
   "short_name": "DAA Pay",
+  "description": "DAA Montenegro payment queue: invoices, refunds and contract payments.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#F3F3F1",
+  "orientation": "any",
+  "background_color": "#111111",
   "theme_color": "#111111",
+  "lang": "en",
+  "categories": ["business", "finance", "productivity"],
   "icons": [
-    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Add to payment queue", "short_name": "Add", "url": "/?add=1", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] }
   ]
 }
