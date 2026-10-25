@@ -669,7 +669,7 @@ async function upsertBen(u) {
     ['address', 'pdv', 'payType', 'account', 'iban', 'swift', 'jmbg'].forEach(function (k) { if (u[k]) p[k] = u[k]; });
     return patch('bens', ex.id, p);
   }
-  return put('bens', uid('b'), Object.assign({ name: '', pib: '', address: '', pdv: '', payType: 'domestic', account: '', iban: '', swift: '', jmbg: u.pib || '' }, u));
+  return put('bens', uid('b'), Object.assign({ createdAt: stamp(), createdBy: G.me.id, name: '', pib: '', address: '', pdv: '', payType: 'domestic', account: '', iban: '', swift: '', jmbg: u.pib || '' }, u));
 }
 function nextPq() { return G.data.items.reduce(function (m, x) { return Math.max(m, x.pqn || 0); }, 0) + 1; }
 
@@ -875,7 +875,7 @@ var HELP = [
   { id: 'requests', title: 'Refunds and payments by contract', text: [
     'Refund request: who is refunded, how they are paid (domestic account or IBAN/SWIFT), the reason and the amount. Attach receipts.',
     'Payment by contract: beneficiary, account, purpose, amount, JMBG or PIB, payment reference and the legal reference (contract or decision). Generate automatically makes a numbered decision reference.',
-    'Choose a beneficiary from the archive to fill in their details. New beneficiaries are saved automatically when you submit.'] },
+    'Choose a beneficiary from the archive to fill in their details. The archive is shared: a beneficiary added by anyone can be chosen by everyone. New beneficiaries are saved automatically when you submit.'] },
   { id: 'links', title: 'Clients, projects and cost estimates', text: [
     'Every request can be linked to a client, one of that client’s projects and a cost estimate (number plus the CE file). All three are optional.',
     'Change the links later from the request preview with Edit links. The queue filters by client and project.'] },
@@ -1835,7 +1835,7 @@ function AddModal() {
         </div>`}
 
         ${isReq && html`<div class="stack">
-          <${Field} label="Beneficiary archive" hint=${G.data.bens.length ? G.data.bens.length + ' saved. Choosing one fills in the payment details.' : 'Nobody saved yet. Beneficiaries are saved here automatically when you submit.'}>
+          <${Field} label="Beneficiary archive" hint=${G.data.bens.length ? G.data.bens.length + ' saved by the team. Choosing one fills in the payment details.' : 'Nobody saved yet. Beneficiaries are saved here automatically when you submit, and everyone can choose them next time.'}>
             <select id="rq-ben" class="inp" value=${form.benId} onChange=${function (e) { var b = byId(G.data.bens, e.target.value); setForm(Object.assign({}, form, b ? { benId: b.id, beneficiary: b.name, payType: b.payType || 'domestic', account: b.account || '', iban: b.iban || '', swift: b.swift || '', jmbg: b.jmbg || b.pib || '' } : { benId: '', beneficiary: '', payType: 'domestic', account: '', iban: '', swift: '', jmbg: '' })); }}>
               <option value="">+ New beneficiary</option>${G.data.bens.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (b) { return html`<option value=${b.id}>${b.name} · ${b.account || b.iban || (b.pib ? 'PIB ' + b.pib : 'no account')}</option>`; })}
             </select><//>
@@ -2018,7 +2018,7 @@ function Beneficiaries() {
   </form>`;
   return html`<main class="page wrap gut">
     <section class="card pad row" style="justify-content: space-between; gap: 12px" aria-label="Beneficiaries">
-      <div style="min-width: 0"><h2 style="font-size: 17px">Beneficiaries</h2><div class="muted" style="font-size: 13px">Suppliers and people we pay. Saved automatically from invoices and requests; ${canEdit ? 'you can correct them here.' : 'the CEO, account and office managers can edit them.'}</div></div>
+      <div style="min-width: 0"><h2 style="font-size: 17px">Beneficiaries</h2><div class="muted" style="font-size: 13px">Suppliers and people we pay, shared by everyone: once someone adds a beneficiary, all users can choose it. Saved automatically from invoices and requests; ${canEdit ? 'you can correct them here.' : 'the CEO, account and office managers can edit them.'}</div></div>
       <div class="row" style="flex: 1 1 320px; justify-content: flex-end">
         <label style="flex: 1 1 220px; max-width: 360px"><span class="sr">Search beneficiaries</span><input id="bn-q" class="inp" type="search" placeholder="Search name, PIB, account, address" value=${q} onInput=${function (e) { setQ(e.target.value); }} /></label>
         ${canEdit && html`<button class="btn" onClick=${function () { open(null); }}>${I.plus} Add beneficiary</button>`}
@@ -2029,7 +2029,7 @@ function Beneficiaries() {
         var ok = !b.account || acctValid(b.account);
         return html`<article key=${b.id} class=${'mcard' + (ed && ed.id === b.id ? ' sel' : '')}>
           <div class="mtop"><b style="font-size: 15px; word-break: break-word; flex: 1 1 auto; min-width: 0">${b.name}</b><span class="muted num" style="white-space: nowrap">${benUses(b)} in queue</span></div>
-          <div class="mmeta"><span class="muted">PIB </span><span class="mono">${b.pib || '—'}</span></div>
+          <div class="mmeta"><span class="muted">PIB </span><span class="mono">${b.pib || '—'}</span>${b.createdBy && html`<span class="muted"> · Added by ${userName(b.createdBy)}</span>`}</div>
           <div class="mmeta">${b.account ? html`<span class="mono">${b.account}</span> · ${b.bank || bankName(b.account)}${ok ? '' : ' · control digits differ from the usual check'}` : b.iban ? html`<span class="mono">${b.iban}</span> · IBAN` : html`<span class="muted">No bank account</span>`}</div>
           ${b.address && html`<div class="mmeta">${b.address}</div>`}
           ${(canEdit || top) && html`<div class="row" style="margin-top: 4px">${canEdit && html`<button class="btn q sm" onClick=${function () { open(b); window.scrollTo(0, 0); }}>Edit</button>`}${top && html`<button class="btn q sm" aria-label=${'Delete ' + b.name} onClick=${function () { setEd(null); setDel(b.id); }}>${I.trash}</button>`}</div>`}
@@ -2041,7 +2041,7 @@ function Beneficiaries() {
         <tbody>${list.map(function (b) {
           var ok = !b.account || acctValid(b.account);
           return html`<tr key=${b.id} class=${ed && ed.id === b.id ? 'sel' : ''}>
-            <td style="padding-left: 16px; font-weight: 600">${b.name}</td>
+            <td style="padding-left: 16px"><b>${b.name}</b>${b.createdBy && html`<div class="muted" style="font-size: 12px">Added by ${userName(b.createdBy)}</div>`}</td>
             <td class="mono">${b.pib || '—'}</td>
             <td>${b.account ? html`<span class="mono">${b.account}</span><div class="muted" style="font-size: 12px">${b.bank || bankName(b.account)}${ok ? '' : ' · control digits differ from the usual check'}</div>` : (b.iban ? html`<span class="mono">${b.iban}</span><div class="muted" style="font-size: 12px">IBAN${b.swift ? ' · ' + b.swift : ''}</div>` : html`<span class="muted">—</span>`)}</td>
             <td style="max-width: 280px">${b.address || html`<span class="muted">—</span>`}</td>

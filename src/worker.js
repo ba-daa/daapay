@@ -426,6 +426,7 @@ async function writeDoc(env, me, b) {
     if (op !== 'delete') { const ks = Object.keys(data); if (!ks.every((k) => ['active', 'until'].includes(k))) deny(); next = merge(cur, Object.assign({}, data, data.active === false ? { endedBy: me.id, endedAt: podgoricaStamp().short } : {})); }
   } else if (col === 'bens') {
     if (op === 'delete' && !top) deny('Only the CEO or Super-admin can delete beneficiaries.');
+    if (op !== 'delete') { if (!cur) { next.createdBy = me.id; next.createdAt = next.createdAt || podgoricaStamp().short; } else { next.createdBy = cur.createdBy || ''; next.createdAt = cur.createdAt || ''; } }
   } else if (col === 'clients' || col === 'projects') {
     if (op === 'delete' && !top) deny();
   }
