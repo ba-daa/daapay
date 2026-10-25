@@ -1,7 +1,7 @@
 // DAA Pay — Cloudflare Worker: API, sign-in, role rules, files, email, weekly report, backups.
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
-const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs'];
+const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news'];
 const APP_VERSION = '0.2.0';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
@@ -218,6 +218,7 @@ async function api(req, env, url, ctx) {
   if (p === '/api/users/invite' && m === 'POST') return resendInvite(env, me, await body(req));
   if (p === '/api/notify/new' && m === 'POST') return notifyNew(env, me, await body(req));
   if (p === '/api/bug' && m === 'POST') return reportBug(req, env, me, await body(req));
+  if (p === '/api/announce' && m === 'POST') return announce(env, me, await body(req));
   if (p === '/api/regs/approve' && m === 'POST') return approveReg(env, me, await body(req));
   if (p === '/api/backup' && m === 'GET') return backupApi(env, me);
   if (p === '/api/import' && m === 'POST') return importApi(env, me, await body(req));
@@ -420,6 +421,9 @@ async function writeDoc(env, me, b) {
     if (op === 'delete' || !cur || !isTop(role)) deny('Bug reports are sent from Help · Report a bug.');
     const ks = Object.keys(data); if (!ks.every((k) => ['status', 'note'].includes(k))) deny();
     next = merge(cur, Object.assign({}, data, { statusBy: me.id, statusAt: podgoricaStamp().short }));
+  } else if (col === 'news') {
+    if (!top || !cur) deny('Only the CEO or Super-admin can manage announcements.');
+    if (op !== 'delete') { const ks = Object.keys(data); if (!ks.every((k) => ['active', 'until'].includes(k))) deny(); next = merge(cur, Object.assign({}, data, data.active === false ? { endedBy: me.id, endedAt: podgoricaStamp().short } : {})); }
   } else if (col === 'bens') {
     if (op === 'delete' && !top) deny('Only the CEO or Super-admin can delete beneficiaries.');
   } else if (col === 'clients' || col === 'projects') {
@@ -634,11 +638,37 @@ async function reportBug(req, env, me, b) {
   return json({ ok: true, id });
 }
 
+// Announcements from the CEO or Super-admin: banner on the home page, a notification and an email for everyone.
+const NEWS_LEVEL = { critical: { label: 'Critical', color: '#B42318' }, important: { label: 'Important', color: '#E0A800', ink: '#111' }, fyi: { label: 'FYI', color: '#067647' } };
+async function announce(env, me, b) {
+  if (!isTop(me.role)) fail(403, 'Only the CEO or Super-admin can send announcements.');
+  const t = (k, n) => String(b[k] || '').trim().slice(0, n);
+  const level = NEWS_LEVEL[b.level] ? b.level : 'fyi', title = t('title', 140), text = t('body', 4000);
+  const until = /^\d{4}-\d{2}-\d{2}$/.test(b.until || '') ? b.until : '';
+  if (!title) fail(400, 'Add a title.');
+  const id = rid('a'), ts = now(), time = podgoricaStamp(ts).short, L = NEWS_LEVEL[level];
+  await putDoc(env, 'news', id, { by: me.id, ts, time, level, title, body: text, until, active: true });
+  await logEvent(env, me.id, 'data', 'Sent a ' + L.label + ' announcement: ' + title);
+  const users = (await allDocs(env, 'users')).filter((u) => u.active !== false);
+  for (const u of users) if (u.id !== me.id) await putDoc(env, 'notifs', rid('n'), { to: u.id, text: L.label + ': ' + title, ts, time, readBy: {}, news: id });
+  if (!env.RESEND_API_KEY || b.email === false) return json({ ok: true, id, emailOn: !!env.RESEND_API_KEY, emailed: 0, failed: 0 });
+  let emailed = 0, failed = 0;
+  const lines = text ? text.split(/\n{2,}/) : [];
+  lines.push('From ' + nameOf(me) + ', ' + ROLE[me.role] + (until ? '. Valid until ' + until.split('-').reverse().join('.') + '.' : '.'));
+  for (const u of users) {
+    if (!u.email) continue;
+    try { await sendMail(env, mailOf(env, [u.email], '[' + L.label + '] ' + title, title, lines, { label: 'Open DAA Pay', url: appUrl(env) }, null, L)); emailed++; }
+    catch (e) { failed++; }
+  }
+  return json({ ok: true, id, emailOn: true, emailed, failed });
+}
+
 // ---------------------------------------------------------------- email (Resend)
 // Shared black-and-white layout for every DAA Pay email.
-function mailOf(env, to, subject, heading, lines, button, rows) {
+function mailOf(env, to, subject, heading, lines, button, rows, tag) {
   const html = '<div style="background:#F3F3F1;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;color:#111"><div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #D9D9D5;border-radius:12px;padding:28px">' +
     '<table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:18px"><tr><td><img src="' + appUrl(env) + '/static/icon-192.png" width="40" height="40" alt="DAA" style="display:block;border-radius:6px"></td><td style="padding-left:10px;font-weight:700;font-size:16px">DAA Pay</td></tr></table>' +
+    (tag ? '<div style="display:inline-block;background:' + tag.color + ';color:' + (tag.ink || '#fff') + ';font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:4px 10px;border-radius:999px;margin-bottom:10px">' + esc(tag.label) + '</div>' : '') +
     '<h1 style="font-size:20px;line-height:1.3;margin:0 0 12px">' + esc(heading) + '</h1>' +
     lines.map((l) => '<p style="font-size:14px;line-height:1.55;margin:0 0 10px">' + esc(l) + '</p>').join('') +
     (rows && rows.length ? '<table cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin:8px 0 14px;font-size:13px">' + rows.map((r) => '<tr>' + r.map((c, i) => '<td style="border-top:1px solid #E5E5E1;' + (i === r.length - 1 ? 'text-align:right;font-weight:700;white-space:nowrap' : '') + '">' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>' : '') +

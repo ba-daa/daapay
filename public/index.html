@@ -23,6 +23,7 @@ img { max-width: 100%; }
   --line: #D9D9D5; --line-2: #EAEAE6; --field: #B9B9B4; --soft: #ECECE8; --s2: #D3D3CE; --s3: #4A4A47;
   --inv-bg: #111111; --inv-fg: #FFFFFF; --danger: #B42318; --danger-bg: #FDECEA; --danger-ink: #8A1C12;
   --scrim: rgba(17, 17, 17, 0.45); --logo-filter: none;
+  --crit: #B42318; --crit-bg: #FDECEA; --imp: #E0A800; --imp-bg: #FFF7D1; --fyi: #067647; --fyi-bg: #E8F6EE;
   --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
@@ -30,11 +31,13 @@ img { max-width: 100%; }
   --bg: #121211; --surface: #1B1B1A; --ink: #F2F2EF; --ink-2: #D0D0CB; --muted: #A2A29C;
   --line: #34342F; --line-2: #2A2A26; --field: #55554F; --soft: #272724; --s2: #3B3B37; --s3: #BDBDB7;
   --inv-bg: #F2F2EF; --inv-fg: #111111; --danger: #FF8A80; --danger-bg: #3A1714; --danger-ink: #FFB4AB;
+  --crit: #FF8A80; --crit-bg: #3A1714; --imp: #F5C518; --imp-bg: #332A08; --fyi: #6CD49A; --fyi-bg: #12301F;
   --scrim: rgba(0, 0, 0, 0.6); --logo-filter: invert(1); color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121211; --surface: #1B1B1A; --ink: #F2F2EF; --ink-2: #D0D0CB; --muted: #A2A29C;
   --line: #34342F; --line-2: #2A2A26; --field: #55554F; --soft: #272724; --s2: #3B3B37; --s3: #BDBDB7;
   --inv-bg: #F2F2EF; --inv-fg: #111111; --danger: #FF8A80; --danger-bg: #3A1714; --danger-ink: #FFB4AB;
+  --crit: #FF8A80; --crit-bg: #3A1714; --imp: #F5C518; --imp-bg: #332A08; --fyi: #6CD49A; --fyi-bg: #12301F;
   --scrim: rgba(0, 0, 0, 0.6); --logo-filter: invert(1); color-scheme: dark }
 
 * { box-sizing: border-box; }
@@ -87,6 +90,10 @@ input[type="date"].inp { min-width: 0; max-width: 100%; display: block; }
 .alert { padding: 10px 14px; border-radius: 10px; font-size: 13px; }
 .alert.e { background: var(--danger-bg); color: var(--danger-ink); }
 .alert.i { background: var(--soft); color: var(--ink); }
+.ann { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; border-left: 5px solid var(--lc); background: var(--lb); color: var(--ink); }
+.ann.critical { --lc: var(--crit); --lb: var(--crit-bg); } .ann.important { --lc: var(--imp); --lb: var(--imp-bg); } .ann.fyi { --lc: var(--fyi); --lb: var(--fyi-bg); }
+.lvl { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; color: var(--surface); background: var(--lc); white-space: nowrap; }
+.lvl.critical { --lc: var(--crit); } .lvl.important { --lc: var(--imp); color: #111; } .lvl.fyi { --lc: var(--fyi); }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
 .pad { padding: 16px 20px; }
 .ck { width: 18px; height: 18px; accent-color: var(--ink); margin: 0; }
@@ -279,7 +286,7 @@ var BUYER_TIN = '02764318';
 var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
-var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs'];
+var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news'];
 var APP_VERSION = '0.2.0';
 
 // ---------- global store
@@ -762,6 +769,70 @@ function FirstRun() {
   </div></main>`;
 }
 
+// ================= ANNOUNCEMENTS =================
+var LEVELS = [['critical', 'Critical'], ['important', 'Important'], ['fyi', 'FYI']];
+var LEVEL_RANK = { critical: 0, important: 1, fyi: 2 };
+function newsLive(a) { return a.active !== false && (!a.until || a.until >= todayIso()); }
+function hiddenNews() { try { return JSON.parse(localStorage.getItem('daa-news-hidden-' + G.me.id) || '{}'); } catch (e) { return {}; } }
+function Announcements() {
+  var hs = useState(hiddenNews()), hidden = hs[0], setHidden = hs[1];
+  var top = isTop(G.me.role);
+  var list = G.data.news.filter(newsLive).filter(function (a) { return a.level === 'critical' || !hidden[a.id] || G.ui.newsShow === a.id; })
+    .sort(function (a, b) { return (LEVEL_RANK[a.level] - LEVEL_RANK[b.level]) || (b.ts - a.ts); });
+  if (!list.length) return null;
+  function hide(id) { var h = Object.assign({}, hidden); h[id] = 1; setHidden(h); if (G.ui.newsShow === id) G.ui.newsShow = null; try { localStorage.setItem('daa-news-hidden-' + G.me.id, JSON.stringify(h)); } catch (e) {} }
+  return html`<section class="stack" style="gap: 8px" aria-label="Announcements">${list.map(function (a) { return html`<div key=${a.id} class=${'ann ' + a.level} role=${a.level === 'critical' ? 'alert' : 'status'}>
+    <div class="stack" style="gap: 4px; flex: 1; min-width: 0">
+      <div class="row" style="gap: 8px"><span class=${'lvl ' + a.level}>${LEVELS.filter(function (l) { return l[0] === a.level; })[0][1]}</span><b style="font-size: 15px">${a.title}</b></div>
+      ${a.body && html`<div style="font-size: 14px; white-space: pre-line; line-height: 1.5">${a.body}</div>`}
+      <div class="muted" style="font-size: 12px">${userName(a.by)} · ${a.time}${a.until ? ' · until ' + a.until.split('-').reverse().join('.') : ''}</div>
+    </div>
+    ${top ? html`<button class="btn q sm" onClick=${function () { patch('news', a.id, { active: false }); }}>End</button>`
+      : a.level !== 'critical' && html`<button class="icon" aria-label="Hide this announcement" onClick=${function () { hide(a.id); }}>${I.x}</button>`}
+  </div>`; })}</section>`;
+}
+function AnnounceAdmin() {
+  var blank = { level: 'important', title: '', body: '', until: '', email: true, err: '', busy: false };
+  var s = useState(blank), f = s[0], set = s[1], os = useState(false), open = os[0], setOpen = os[1];
+  var all = G.data.news.slice().sort(function (a, b) { return b.ts - a.ts; });
+  async function send(e) {
+    e.preventDefault();
+    if (!f.title.trim()) { set(Object.assign({}, f, { err: 'Add a title.' })); return; }
+    if (f.level === 'critical' && !confirm('Send a Critical announcement to everyone' + (f.email ? ' and email them' : '') + '?')) return;
+    set(Object.assign({}, f, { busy: true, err: '' }));
+    try {
+      var r = await window.daa.post('/api/announce', { level: f.level, title: f.title, body: f.body, until: f.until, email: f.email });
+      toast('Announcement published' + (!f.email ? '.' : !r.emailOn ? '. Email is not set up yet, so it is only in the app.' : '; emailed to ' + r.emailed + (r.failed ? ', ' + r.failed + ' failed.' : '.')), r.failed > 0);
+      set(blank); setOpen(false);
+    } catch (ex) { set(Object.assign({}, f, { busy: false, err: ex.message })); }
+  }
+  return html`<section class="card" aria-label="Announcements" style="overflow: hidden">
+    <div class="pad row" style="justify-content: space-between; border-bottom: 1px solid var(--line)">
+      <div><h2 style="font-size: 17px">Announcements</h2><div class="muted" style="font-size: 13px">Shown to everyone on the home page, in notifications and by email.</div></div>
+      ${!open && html`<button class="btn sm" onClick=${function () { setOpen(true); }}>${I.plus} New announcement</button>`}
+    </div>
+    ${open && html`<form class="pad stack" style="background: var(--bg)" onSubmit=${send}>
+      <fieldset style="border: 0; margin: 0; padding: 0" class="stack"><legend style="padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 500">Category</legend>
+        <div class="row">${LEVELS.map(function (l) { return html`<label key=${l[0]} class=${'seg' + (f.level === l[0] ? ' on' : '')}><input type="radio" name="lvl" checked=${f.level === l[0]} onChange=${function () { set(Object.assign({}, f, { level: l[0] })); }} /> <span class=${'lvl ' + l[0]}>${l[1]}</span></label>`; })}</div></fieldset>
+      <${Field} label="Title" req><input id="an-title" class="inp" maxlength="140" value=${f.title} onInput=${inputOn(f, set, 'title')} /><//>
+      <${Field} label="Message"><textarea id="an-body" class="inp" rows="4" value=${f.body} onInput=${inputOn(f, set, 'body')}></textarea><//>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: end">
+        <${Field} label="Show until (optional)" hint="Leave empty to show it until you end it."><input id="an-until" class="inp" type="date" min=${todayIso()} value=${f.until} onInput=${inputOn(f, set, 'until')} /><//>
+        <label class="row" style="gap: 8px; min-height: 44px"><input type="checkbox" checked=${f.email} onChange=${function (e) { set(Object.assign({}, f, { email: e.target.checked })); }} /> Also email everyone</label>
+      </div>
+      ${f.title && html`<div class="stack" style="gap: 6px"><span class="muted" style="font-size: 12px">Preview</span><div class=${'ann ' + f.level}><div class="stack" style="gap: 4px"><div class="row" style="gap: 8px"><span class=${'lvl ' + f.level}>${LEVELS.filter(function (l) { return l[0] === f.level; })[0][1]}</span><b>${f.title}</b></div>${f.body && html`<div style="font-size: 14px; white-space: pre-line">${f.body}</div>`}</div></div></div>`}
+      ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
+      <div class="row" style="justify-content: flex-end"><button class="btn q" type="button" onClick=${function () { set(blank); setOpen(false); }}>Cancel</button><button class="btn" type="submit" disabled=${f.busy}>${f.busy ? 'Publishing…' : 'Publish'}</button></div>
+    </form>`}
+    ${all.map(function (a) { var live = newsLive(a); return html`<div key=${a.id} class="pad row" style="justify-content: space-between; border-bottom: 1px solid var(--line-2)">
+      <div style="min-width: 0"><div class="row" style="gap: 8px"><span class=${'lvl ' + a.level}>${LEVELS.filter(function (l) { return l[0] === a.level; })[0][1]}</span><b>${a.title}</b></div>
+        <div class="muted" style="font-size: 12px">${userName(a.by)} · ${a.time}${a.until ? ' · until ' + a.until.split('-').reverse().join('.') : ''} · ${live ? 'Showing' : a.active === false ? 'Ended' + (a.endedAt ? ' ' + a.endedAt : '') : 'Expired'}</div></div>
+      <div class="row">${live && html`<button class="btn q sm" onClick=${function () { patch('news', a.id, { active: false }); }}>End</button>`}<button class="btn q sm" onClick=${function () { if (confirm('Delete this announcement?')) del('news', a.id); }}>Delete</button></div>
+    </div>`; })}
+    ${!all.length && !open && html`<div class="empty">No announcements yet.</div>`}
+  </section>`;
+}
+
 // ================= SET PASSWORD (invitation / reset link) =================
 function SetPassword() {
   var tv = G.tokenView, s = useState({ info: null, err: '', pass: '', pass2: '', busy: false, done: false }), f = s[0], set = s[1];
@@ -1036,7 +1107,7 @@ function Header() {
         <div style="max-height: 380px; overflow-y: auto">
           ${mine.length ? mine.slice(0, 60).map(function (n) {
             var rd = (n.readBy || {})[me.id];
-            return html`<button key=${n.id} style=${'all: unset; box-sizing: border-box; width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); cursor: pointer;' + (rd ? '' : ' background: var(--soft); box-shadow: inset 3px 0 0 var(--ink);')} onClick=${function () { markRead([n]); setUi(n.reg || n.bug ? { tab: 'users', bell: false, open: null } : { tab: 'queue', bell: false, open: n.itemId || null }); }}><span style="font-size: 13px">${n.text}</span><span class="muted" style="font-size: 12px">${n.time}</span></button>`;
+            return html`<button key=${n.id} style=${'all: unset; box-sizing: border-box; width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-bottom: 1px solid var(--line-2); cursor: pointer;' + (rd ? '' : ' background: var(--soft); box-shadow: inset 3px 0 0 var(--ink);')} onClick=${function () { markRead([n]); setUi(n.news ? { tab: 'queue', bell: false, open: null, newsShow: n.news } : n.reg || n.bug ? { tab: 'users', bell: false, open: null } : { tab: 'queue', bell: false, open: n.itemId || null }); }}><span style="font-size: 13px">${n.text}</span><span class="muted" style="font-size: 12px">${n.time}</span></button>`;
           }) : html`<div class="empty" style="padding: 24px">You're all caught up.</div>`}
         </div></div>`}
     </div>
@@ -1145,6 +1216,7 @@ function Queue() {
   }
 
   return html`<main class="page wrap gut">
+    <${Announcements} />
     ${roleNote && html`<div class="alert i">${roleNote}</div>`}
     <section class="card pad stack" aria-label="Filters">
       <div class="row chips"><span class="lab" style="font-size: 13px; font-weight: 500; margin-right: 4px">Payment type</span>
@@ -1853,6 +1925,7 @@ function Users() {
   }
   var matrix = [['See all payment requests', [1, 1, 0, 0, 1]], ['See their assistants\u2019 requests', [1, 1, 1, 0, 1]], ['Add invoices and payment requests', [1, 1, 1, 1, 1]], ['Approve document', [1, 1, 1, 0, 0]], ['Deny with reason', [1, 1, 1, 0, 0]], ['Approve for payment', [1, 1, 0, 0, 0]], ['Send to payment', [1, 1, 0, 0, 0]], ['Receive payments to execute', [0, 0, 0, 0, 1]], ['Mark as paid', [1, 1, 0, 0, 1]], ['Approve access requests', [1, 1, 1, 0, 0]], ['Create accounts', ['All', 'All', 'Assistants', 0, 0]], ['Change roles, deactivate', [1, 1, 0, 0, 0]]];
   return html`<main class="page wrap gut">
+    ${top && html`<${AnnounceAdmin} />`}
     <section class="card" aria-label="Access requests" style="overflow: hidden">
       <div class="pad" style="border-bottom: 1px solid var(--line)"><h2 style="font-size: 17px">Access requests</h2><div class="muted" style="font-size: 13px">People who asked for access from the sign-in screen.</div></div>
       ${G.data.regs.length ? G.data.regs.map(function (r) { return html`<div key=${r.id} class="row pad" style="border-bottom: 1px solid var(--line-2); gap: 10px 16px">
