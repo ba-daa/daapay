@@ -26,7 +26,7 @@ crons = ["37 6 * * 1", "15 2 * * *"]
 [vars]
 MAIL_FROM = "DAA Pay <pay@daa.co.me>"
 # Set APP_URL to the public address once known, e.g. https://pay.daa.co.me
-APP_URL = ""
+APP_URL = "https://daa-pay.nikola-radonjic.workers.dev"
 
 [observability]
 enabled = true
