@@ -42,7 +42,12 @@ jobs:
           fi
           echo "D1 database: $ID"
           sed -i "s/__D1_DATABASE_ID__/$ID/" wrangler.toml
-          npx wrangler r2 bucket list | grep -q "daa-pay-files" || npx wrangler r2 bucket create daa-pay-files --location weur
+          # The token may not have R2 rights; then the bucket must already exist (created in the dashboard).
+          if npx wrangler r2 bucket list > r2.txt 2>&1; then
+            grep -q "daa-pay-files" r2.txt || npx wrangler r2 bucket create daa-pay-files --location weur
+          else
+            echo "::warning::The API token cannot manage R2. Using the existing bucket 'daa-pay-files' (create it in the Cloudflare dashboard if it is missing)."
+          fi
 
       - name: Apply database migrations
         run: npx wrangler d1 migrations apply daa-pay --remote
