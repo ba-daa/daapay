@@ -2,7 +2,7 @@
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.5.0';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -219,6 +219,8 @@ async function api(req, env, url, ctx) {
   if (p === '/api/notify/new' && m === 'POST') return notifyNew(env, me, await body(req));
   if (p === '/api/bug' && m === 'POST') return reportBug(req, env, me, await body(req));
   if (p === '/api/announce' && m === 'POST') return announce(env, me, await body(req));
+  if (p === '/api/numbers/fill' && m === 'POST') return fillNumbers(env);
+  if (p === '/api/costs' && m === 'GET') return projectCosts(env, me);
   if (p === '/api/regs/approve' && m === 'POST') return approveReg(env, me, await body(req));
   if (p === '/api/backup' && m === 'GET') return backupApi(env, me);
   if (p === '/api/import' && m === 'POST') return importApi(env, me, await body(req));
@@ -428,8 +430,8 @@ async function writeDoc(env, me, b) {
     if (op === 'delete' && cur && cur.by !== me.id && !top) deny('Only the author, the CEO or the Super-admin can delete a cost estimate.');
     if (op !== 'delete') {
       if (cur) { next.by = cur.by; next.ts = cur.ts; next.created = cur.created; } else { next.by = me.id; next.ts = now(); }
-      const no = (d) => String(d.projNo) + '-' + d.seq + '/' + d.year;
-      if ((await allDocs(env, 'ces')).some((c) => c.id !== id && no(c) === no(next))) fail(409, 'That cost estimate number is already used. Change the sequence number.');
+      const no = (d) => d.base != null ? d.base + '-' + d.iter : 'old:' + d.projNo + '-' + d.seq + '/' + d.year;
+      if ((await allDocs(env, 'ces')).some((c) => c.id !== id && no(c) === no(next))) fail(409, 'Cost estimate ' + next.base + '-' + String(next.iter).padStart(2, '0') + ' already exists. Use the next free number.');
     }
   } else if (col === 'svc' || col === 'svccats') {
     if (op === 'delete' && !top) deny('Set the service as not in use instead of deleting it.');
@@ -438,6 +440,7 @@ async function writeDoc(env, me, b) {
     if (op !== 'delete') { if (!cur) { next.createdBy = me.id; next.createdAt = next.createdAt || podgoricaStamp().short; } else { next.createdBy = cur.createdBy || ''; next.createdAt = cur.createdAt || ''; } }
   } else if (col === 'clients' || col === 'projects') {
     if (op === 'delete' && !top) deny();
+    if (op !== 'delete') await numberDoc(env, col, id, cur, next);
   }
 
   if (op === 'delete') await delDoc(env, col, id);
@@ -646,6 +649,45 @@ async function reportBug(req, env, me, b) {
     ['From ' + nameOf(me) + ' (' + ROLE[me.role] + '), ' + bug.time + '.'], { label: 'Open bug reports', url: appUrl(env) },
     [['What happened', bug.what], ['Expected', bug.expected || '—'], ['Steps', bug.steps || '—'], ['Where', bug.area || bug.context.page || '—'], ['Device', bug.context.screen + ' · ' + bug.context.agent]])).catch(() => {});
   return json({ ok: true, id });
+}
+
+// Client identifiers (01, 02 …) and project numbers per client (P001-01/26, P002-01/26 …).
+const yy = (ms) => podgoricaStamp(ms).date.slice(8, 10);
+async function numberDoc(env, col, id, cur, next) {
+  const all = (await allDocs(env, col)).filter((d) => d.id !== id);
+  if (col === 'clients') {
+    if (!next.code) next.code = (cur && cur.code) || String(all.reduce((m, c) => Math.max(m, parseInt(c.code, 10) || 0), 0) + 1).padStart(2, '0');
+    next.code = String(next.code).trim();
+    if (!/^\d{1,4}$/.test(next.code)) fail(400, 'A client identifier is a number, for example 01.');
+    if (next.code.length < 2) next.code = next.code.padStart(2, '0');
+    if (all.some((c) => c.code === next.code)) fail(409, 'Identifier ' + next.code + ' is already used by ' + (all.find((c) => c.code === next.code).name || 'another client') + '.');
+  } else {
+    if (!next.year) next.year = (cur && cur.year) || yy();
+    if (next.no == null || next.no === '') next.no = cur && cur.no && cur.clientId === next.clientId ? cur.no : all.filter((p) => p.clientId === next.clientId).reduce((m, p) => Math.max(m, p.no || 0), 0) + 1;
+    next.no = parseInt(next.no, 10);
+    if (!(next.no > 0)) fail(400, 'A project number is a whole number, for example 12.');
+    if (all.some((p) => p.clientId === next.clientId && p.no === next.no)) fail(409, 'Project number P' + String(next.no).padStart(3, '0') + ' is already used for this client.');
+  }
+}
+async function fillNumbers(env) {
+  const rows = async (col) => (await env.DB.prepare('SELECT id, data, ts FROM docs WHERE col = ? AND deleted = 0 ORDER BY ts, id').bind(col).all()).results.map((r) => Object.assign({ id: r.id, _ts: r.ts }, JSON.parse(r.data)));
+  let changed = 0;
+  const clients = await rows('clients');
+  let top = clients.reduce((m, c) => Math.max(m, parseInt(c.code, 10) || 0), 0);
+  for (const c of clients) if (!c.code) { c.code = String(++top).padStart(2, '0'); const d = Object.assign({}, c); delete d.id; delete d._ts; await putDoc(env, 'clients', c.id, d); changed++; }
+  const projects = await rows('projects');
+  for (const p of projects) if (!p.no) {
+    p.no = projects.filter((q) => q.clientId === p.clientId).reduce((m, q) => Math.max(m, q.no || 0), 0) + 1; p.year = p.year || yy(p._ts);
+    const d = Object.assign({}, p); delete d.id; delete d._ts; await putDoc(env, 'projects', p.id, d); changed++;
+  }
+  return json({ ok: true, changed });
+}
+// What has been spent per project and per cost estimate: payment queue items (not denied) linked to them.
+async function projectCosts(env, me) {
+  if (!(isTop(me.role) || me.role === 'om' || me.role === 'am')) fail(403, 'Your role cannot see project costs.');
+  const full = isTop(me.role) || me.role === 'om';
+  const items = (await allDocs(env, 'items')).filter((x) => x.status !== 5 && (x.projectId || (x.estimate && x.estimate.ceId)));
+  return json({ items: items.map((x) => ({ id: x.id, pqn: x.pqn, kind: x.kind, amount: Number(x.amount) || 0, status: x.status || 0, projectId: x.projectId || '', ceId: (x.estimate && x.estimate.ceId) || '', title: full ? (x.title || '') : '' })) });
 }
 
 // Announcements from the CEO or Super-admin: banner on the home page, a notification and an email for everyone.
