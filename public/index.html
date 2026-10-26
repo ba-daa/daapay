@@ -1006,7 +1006,7 @@ var HELP = [
     'Cost estimates → New cost estimate. The number is made for you: 199-01/26 = estimate 199, iteration 01, issued in 2026. New iteration makes 199-02/26 of the same estimate; Copy as new estimate takes the next free number. Choose the client and project, and add a title.',
     'Each client has an identifier (01, 02 …) and each project a number per client: P012-01/26 = project 12 of client 01, opened in 2026. Both are given automatically and can be changed under Cost estimates → Projects.',
     'Projects shows, per project, the NET of the approved estimates, the payments linked to it and the margin. Link a payment from the queue: open it → Linked to → DAA cost estimate.',
-    'Add sections (for example “Usluge AV produkcije”) and fill them with Add from price list. Name, unit and price come from the price list; you can change them in the estimate. A changed price shows the price-list price under the line. Custom line adds anything that is not in the price list.',
+    'Add services from price list: each service goes into the section of its category (Kreativne usluge, Usluge AV produkcije, Usluge AV postprodukcije, BTL / event usluge, Ostalo), which is created when needed and kept in that order. Own section adds a section of your own. Name, unit and price come from the price list; you can change them in the estimate. A changed price shows the price-list price under the line. Custom line adds anything that is not in the price list.',
     'Pick the agency fee (10, 7, 5 or 3%). It is set to the client’s usual fee and can be saved as their usual fee. Lines without a tick in Fee are left out of it. The NET total follows; tap + PDV 21% to add VAT, or leave it off.',
     'Tick Also make an English version to get English fields; price-list services already have English names. PDF and Excel come in Montenegrin and, when switched on, in English. The Excel has working formulas.',
     'Price list: everyone can add services and change names and prices. A new price applies to new lines only; estimates already made keep theirs.'] },
@@ -2475,7 +2475,7 @@ async function ceSeedPriceList() {
 }
 function ceBlank() {
   return { base: ceNextBase(), iter: 1, year: todayIso().slice(2, 4), clientId: '', projectId: '', title: '', titleEn: '', projectName: '', projectNameEn: '', contact: '', pmId: G.me.id, date: todayIso(),
-    en: false, fee: 10, vat: false, status: 'draft', sections: [{ id: uid('s'), title: '', titleEn: '', lines: [] }], notes: [{ std: 'eur' }, { std: 'valid' }] };
+    en: false, fee: 10, vat: false, status: 'draft', sections: [], notes: [{ std: 'eur' }, { std: 'valid' }] };
 }
 
 // ---------- PDF in the DAA layout
@@ -2730,10 +2730,26 @@ function CeEditor() {
     if (p && !ce.projectName) patchP.projectName = p.name;
     upd(patchP);
   }
+  // Each service goes into the section of its price-list category; the section is made when needed,
+  // in the order of the categories (own sections keep their place).
   function addFromPrice(svc) {
-    var s = ce.sections[pick], lines = (s.lines || []).concat([{ id: uid('l'), svcId: svc.id, code: svc.code, name: svc.name, nameEn: svc.nameEn || '', calc: '', qty: 1, unit: svc.unit, price: svc.price, std: svc.price, fee: svc.fee !== false }]);
-    updSec(pick, { lines: lines });
-    if (/^TA-|^AU-01/.test(svc.code || '') && !(ce.notes || []).some(function (n) { return n.std === 'tax'; })) setCe(function (c) { return Object.assign({}, c, { notes: (c.notes || []).concat([{ std: 'tax' }]) }); });
+    var line = { id: uid('l'), svcId: svc.id, code: svc.code, name: svc.name, nameEn: svc.nameEn || '', calc: '', qty: 1, unit: svc.unit, price: svc.price, std: svc.price, fee: svc.fee !== false };
+    var cat = byId(G.data.svccats, svc.cat) || { id: svc.cat || 'none', name: 'Ostalo', nameEn: 'Other', order: 999 };
+    var ord = function (s) { var c = s.catId && byId(G.data.svccats, s.catId); return c ? c.order || 0 : 999; };
+    setCe(function (c) {
+      var secs = (c.sections || []).filter(function (s) { return s.catId || (s.lines || []).length || (s.title || '').trim(); }).slice();
+      var i = secs.findIndex(function (s) { return s.catId === cat.id; });
+      if (i < 0) {
+        var sec = { id: uid('s'), catId: cat.id, title: cat.name, titleEn: cat.nameEn || '', lines: [] }, at = secs.findIndex(function (s) { return s.catId && ord(s) > (cat.order || 0); });
+        if (at < 0) { at = 0; secs.forEach(function (s, k) { if (s.catId) at = k + 1; }); }
+        secs.splice(at, 0, sec); i = at;
+      }
+      secs[i] = Object.assign({}, secs[i], { lines: (secs[i].lines || []).concat([line]) });
+      var notes = c.notes || [];
+      if (/^TA-|^AU-01/.test(svc.code || '') && !notes.some(function (n) { return n.std === 'tax'; })) notes = notes.concat([{ std: 'tax' }]);
+      return Object.assign({}, c, { sections: secs, notes: notes });
+    });
+    setDirty(true); setErr('');
   }
   function addCustom(si) { updSec(si, { lines: (ce.sections[si].lines || []).concat([{ id: uid('l'), svcId: '', name: '', nameEn: '', calc: '', qty: 1, unit: 'kom', price: 0, fee: true }]) }); }
   async function save(after) {
@@ -2815,7 +2831,7 @@ function CeEditor() {
         <b style="flex: none">${si + 1}.</b>
         <div class="stack" style="gap: 6px; flex: 1; min-width: 0"><input class="inp" aria-label=${'Section ' + (si + 1) + ' title'} style="font-weight: 600" placeholder="Section, e.g. Usluge AV produkcije" value=${s.title} onInput=${function (e) { updSec(si, { title: e.target.value }); }} />${enIn(s.titleEn, function (e) { updSec(si, { titleEn: e.target.value }); }, 'Section title in English')}</div>
         <b class="num" style="flex: none; min-width: 90px; text-align: right">${ceMoney(tot.secs[si])}</b>
-        ${ce.sections.length > 1 && html`<button class="icon" aria-label=${'Remove section ' + (si + 1)} onClick=${function () { if (!s.lines.length || confirm('Remove this section and its ' + s.lines.length + ' lines?')) upd({ sections: ce.sections.filter(function (x, i) { return i !== si; }) }); }}>${I.trash}</button>`}
+        ${html`<button class="icon" aria-label=${'Remove section ' + (si + 1)} onClick=${function () { if (!s.lines.length || confirm('Remove this section and its ' + s.lines.length + ' lines?')) upd({ sections: ce.sections.filter(function (x, i) { return i !== si; }) }); }}>${I.trash}</button>`}
       </div>
       ${!narrow && s.lines.length > 0 && html`<div class="ce-line ce-head muted"><span>Service</span><span>Quantity</span><span>Unit</span><span>Unit price</span><span class="r">Total</span><span title="Agency fee applies">Fee</span><span></span></div>`}
       ${s.lines.map(function (l, li) {
@@ -2838,9 +2854,11 @@ function CeEditor() {
             <button class="icon" aria-label="Remove line" onClick=${function () { updSec(si, { lines: s.lines.filter(function (x, i) { return i !== li; }) }); }}>${I.x}</button>
           </div>
         </div>`; })}
-      <div class="pad row"><button class="btn sm" onClick=${function () { setPick(si); }}>${I.plus} Add from price list</button><button class="btn q sm" onClick=${function () { addCustom(si); }}>${I.plus} Custom line</button></div>
+      <div class="pad row">${s.catId ? html`<button class="btn sm" onClick=${function () { setPick(s.catId); }}>${I.plus} Add ${s.title || 'services'}</button>` : ''}<button class=${'btn sm' + (s.catId ? ' q' : '')} onClick=${function () { addCustom(si); }}>${I.plus} Custom line</button></div>
     </section>`; })}
-    <button class="btn q" style="align-self: flex-start" onClick=${function () { upd({ sections: ce.sections.concat([{ id: uid('s'), title: '', titleEn: '', lines: [] }]) }); }}>${I.plus} Add section</button>
+    ${!ce.sections.length && html`<div class="card empty">No services yet. Add them from the price list; each one goes into the section of its category (Kreativne usluge, Usluge AV produkcije …).</div>`}
+    <div class="row"><button class="btn" onClick=${function () { setPick('all'); }}>${I.plus} Add services from price list</button>
+      <button class="btn q" onClick=${function () { upd({ sections: ce.sections.concat([{ id: uid('s'), title: '', titleEn: '', lines: [] }]) }); }}>${I.plus} Own section</button></div>
 
     <section class="card pad stack" aria-label="Totals" style="gap: 10px; max-width: 640px; margin-left: auto; width: 100%">
       <div class="row ce-tl"><span>Subtotal</span><b class="num">${ceMoney(tot.sub)}</b></div>
@@ -2866,15 +2884,15 @@ function CeEditor() {
       <div class="muted" style="font-size: 12px">${ce.id ? 'Created by ' + userName(ce.by) + ' · ' + (ce.created || '') + (ce.updatedAt ? ' · last saved ' + ce.updatedAt + ' by ' + userName(ce.updatedBy) : '') : 'Not saved yet'}</div>
       <div class="row">${ce.id && ce.base != null && html`<button class="btn o sm" onClick=${function () { duplicate(true); }}>New iteration (${ce.base}-${pad(ceNextIter(ce.base, ceYear(ce)), 2)})</button>`}${ce.id && html`<button class="btn q sm" onClick=${function () { duplicate(false); }}>Copy as new estimate</button>`}${ce.id && canDelete && html`<button class="btn q sm" onClick=${remove}>${I.trash} Delete</button>`}</div>
     </div>
-    ${pick != null && html`<${ServicePicker} onPick=${addFromPrice} onClose=${function () { setPick(null); }} />`}
+    ${pick != null && html`<${ServicePicker} cat=${pick} onPick=${addFromPrice} onClose=${function () { setPick(null); }} />`}
   </main>`;
 }
 function ServicePicker(p) {
-  var qs = useState(''), q = qs[0], setQ = qs[1], cs = useState('all'), cat = cs[0], setCat = cs[1], as = useState([]), added = as[0], setAdded = as[1];
+  var qs = useState(''), q = qs[0], setQ = qs[1], cs = useState(p.cat || 'all'), cat = cs[0], setCat = cs[1], as = useState([]), added = as[0], setAdded = as[1];
   var svcs = G.data.svc.filter(function (s) { return s.active !== false && (cat === 'all' || s.cat === cat); }).filter(function (s) { var t = q.trim().toLowerCase(); return !t || [s.code, s.name, s.nameEn].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; }); })
     .sort(function (a, b) { return String(a.code || a.name).localeCompare(String(b.code || b.name)); });
   return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) p.onClose(); }}><div class="modal" style="max-width: 760px" role="dialog" aria-modal="true" aria-labelledby="sp-title">
-    <div class="mhead"><div style="flex-grow: 1"><h2 id="sp-title" style="font-size: 20px">Add from price list</h2><div class="muted" style="font-size: 13px">${added.length ? added.length + ' added. Keep adding or close.' : 'Tap a service to add it. You can change name and price in the estimate.'}</div></div><button class="icon" aria-label="Close" onClick=${p.onClose}>${I.x}</button></div>
+    <div class="mhead"><div style="flex-grow: 1"><h2 id="sp-title" style="font-size: 20px">Add from price list</h2><div class="muted" style="font-size: 13px">${added.length ? added.length + ' added. Keep adding or close.' : 'Tap a service to add it. It goes into the section of its category; name and price can be changed in the estimate.'}</div></div><button class="icon" aria-label="Close" onClick=${p.onClose}>${I.x}</button></div>
     <div class="mbody" style="gap: 12px">
       <input id="sp-q" class="inp" type="search" placeholder="Search services" value=${q} onInput=${function (e) { setQ(e.target.value); }} />
       <div class="row">${[{ id: 'all', name: 'All' }].concat(ceCats()).map(function (c) { return html`<button key=${c.id} class=${'chip' + (cat === c.id ? ' on' : '')} onClick=${function () { setCat(c.id); }}>${c.name}</button>`; })}</div>
