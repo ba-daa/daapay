@@ -2,7 +2,7 @@
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.5.2';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -439,7 +439,14 @@ async function writeDoc(env, me, b) {
     if (op === 'delete' && !top) deny('Only the CEO or Super-admin can delete beneficiaries.');
     if (op !== 'delete') { if (!cur) { next.createdBy = me.id; next.createdAt = next.createdAt || podgoricaStamp().short; } else { next.createdBy = cur.createdBy || ''; next.createdAt = cur.createdAt || ''; } }
   } else if (col === 'clients' || col === 'projects') {
-    if (op === 'delete' && !top) deny();
+    if (op === 'delete' && !top) deny('Only the CEO or Super-admin can delete clients and projects.');
+    if (op === 'delete' && cur) {
+      const key = col === 'clients' ? 'clientId' : 'projectId';
+      if ((await allDocs(env, 'ces')).some((c) => c[key] === id)) fail(409, 'It still has cost estimates. Delete or move them first.');
+      if (col === 'clients' && (await allDocs(env, 'projects')).some((p) => p.clientId === id)) fail(409, 'The client still has projects. Delete them first.');
+      for (const x of await allDocs(env, 'items')) if (x[key] === id) { const d = Object.assign({}, x); delete d.id; d[key] = ''; await putDoc(env, 'items', x.id, d); }
+      await logEvent(env, me.id, 'data', 'Deleted ' + (col === 'clients' ? 'client ' : 'project ') + (cur.name || id));
+    }
     if (op !== 'delete') await numberDoc(env, col, id, cur, next);
   }
 

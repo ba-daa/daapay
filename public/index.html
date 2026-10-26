@@ -27,6 +27,8 @@ img { max-width: 100%; }
   --line: #D9D9D5; --line-2: #EAEAE6; --field: #B9B9B4; --soft: #ECECE8; --s2: #D3D3CE; --s3: #4A4A47;
   --inv-bg: #111111; --inv-fg: #FFFFFF; --danger: #B42318; --danger-bg: #FDECEA; --danger-ink: #8A1C12;
   --scrim: rgba(17, 17, 17, 0.45); --logo-filter: none;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23111111' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --p0: #FFF4D6; --p0i: #7A4D00; --p1: #E3EEFF; --p1i: #1D4ED8; --p2: #EEE7FF; --p2i: #5B21B6; --p3: #FFE9D9; --p3i: #9A3412; --p4: #E3F5EA; --p4i: #166534; --p5: #FDECEA; --p5i: #B42318;
   --crit: #B42318; --crit-bg: #FDECEA; --imp: #E0A800; --imp-bg: #FFF7D1; --fyi: #067647; --fyi-bg: #E8F6EE;
   --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
@@ -35,12 +37,16 @@ img { max-width: 100%; }
   --bg: #121211; --surface: #1B1B1A; --ink: #F2F2EF; --ink-2: #D0D0CB; --muted: #A2A29C;
   --line: #34342F; --line-2: #2A2A26; --field: #55554F; --soft: #272724; --s2: #3B3B37; --s3: #BDBDB7;
   --inv-bg: #F2F2EF; --inv-fg: #111111; --danger: #FF8A80; --danger-bg: #3A1714; --danger-ink: #FFB4AB;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23F2F2EF' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --p0: #3A2E0E; --p0i: #FCD679; --p1: #13254A; --p1i: #9DBEFF; --p2: #2A1C4A; --p2i: #C9B4FF; --p3: #3D2112; --p3i: #FDBA8C; --p4: #10301D; --p4i: #86E0A8; --p5: #3A1714; --p5i: #FFB4AB;
   --crit: #FF8A80; --crit-bg: #3A1714; --imp: #F5C518; --imp-bg: #332A08; --fyi: #6CD49A; --fyi-bg: #12301F;
   --scrim: rgba(0, 0, 0, 0.6); --logo-filter: invert(1); color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121211; --surface: #1B1B1A; --ink: #F2F2EF; --ink-2: #D0D0CB; --muted: #A2A29C;
   --line: #34342F; --line-2: #2A2A26; --field: #55554F; --soft: #272724; --s2: #3B3B37; --s3: #BDBDB7;
   --inv-bg: #F2F2EF; --inv-fg: #111111; --danger: #FF8A80; --danger-bg: #3A1714; --danger-ink: #FFB4AB;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23F2F2EF' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --p0: #3A2E0E; --p0i: #FCD679; --p1: #13254A; --p1i: #9DBEFF; --p2: #2A1C4A; --p2i: #C9B4FF; --p3: #3D2112; --p3i: #FDBA8C; --p4: #10301D; --p4i: #86E0A8; --p5: #3A1714; --p5i: #FFB4AB;
   --crit: #FF8A80; --crit-bg: #3A1714; --imp: #F5C518; --imp-bg: #332A08; --fyi: #6CD49A; --fyi-bg: #12301F;
   --scrim: rgba(0, 0, 0, 0.6); --logo-filter: invert(1); color-scheme: dark }
 
@@ -77,6 +83,18 @@ h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.2; }
 .req { color: var(--danger); font-weight: 500; }
 .inp { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--field); border-radius: 8px; background: var(--surface); color: var(--ink); font-weight: 400; font-size: 14px; }
 textarea.inp { resize: vertical; }
+select.inp { -webkit-appearance: none; appearance: none; background-image: var(--chev); background-repeat: no-repeat; background-position: right 14px center; background-size: 12px 8px; padding-right: 40px; text-overflow: ellipsis; }
+.inp.sm { min-height: 40px; font-size: 13px; padding-top: 7px; padding-bottom: 7px; }
+.pst { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pst0 { background: var(--p0); color: var(--p0i); } .pst1 { background: var(--p1); color: var(--p1i); } .pst2 { background: var(--p2); color: var(--p2i); }
+.pst3 { background: var(--p3); color: var(--p3i); } .pst4 { background: var(--p4); color: var(--p4i); } .pst5 { background: var(--p5); color: var(--p5i); }
+.cellink { all: unset; cursor: pointer; text-decoration: underline; text-decoration-color: var(--field); text-underline-offset: 3px; }
+.cellink:hover { text-decoration-color: var(--ink); } .cellink:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 2px; }
+.tm-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 220px; gap: 10px 14px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line-2); }
+.tm-acts { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tm-acts:empty { display: none; }
+.tm-mgr { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+@media (max-width: 640px) { .tm-row { grid-template-columns: 44px minmax(0, 1fr); } .tm-row > .tm-role { grid-column: 2; } }
 input[type="date"].inp { min-width: 0; max-width: 100%; display: block; }
 /* iPhone/iPad Safari: date fields keep a built-in minimum width unless the native look is turned off */
 @supports (-webkit-touch-callout: none) {
@@ -186,7 +204,9 @@ dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break:
 .inp.off { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .ce-tl { justify-content: space-between; flex-wrap: nowrap; }
 .ce-ed { padding-bottom: 40px; }
-.pj-row { display: grid; grid-template-columns: minmax(0, 2fr) 1fr 130px 130px 170px 70px; gap: 12px; padding: 10px 16px; align-items: center; font-size: 14px; }
+.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 40% { box-shadow: inset 0 0 0 2px var(--ink); } 100% { box-shadow: none; } }
+.pj-row { display: grid; grid-template-columns: minmax(0, 2fr) 1fr 130px 130px 170px 110px; gap: 12px; padding: 10px 16px; align-items: center; font-size: 14px; }
 .pj-row.pj-head { font-size: 12px; font-weight: 600; padding-top: 8px; padding-bottom: 8px; }
 .pj-row .r { text-align: right; }
 .ce-bar { position: sticky; top: 0; z-index: 5; }
@@ -318,7 +338,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.5.1';
+var APP_VERSION = '0.5.2';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -737,6 +757,7 @@ function VatBox(p) {
     </div>`}
   </div>`;
 }
+function openProject(clientId, projectId) { if (!clientId && !projectId) return; setUi({ tab: 'ce', ce: null, ceView: 'projects', open: null, pjOpen: projectId || null, pjFocus: projectId ? 'pj-' + projectId : 'cl-' + clientId }); }
 function projectName(id) { var p = byId(G.data.projects, id); return p ? p.name : ''; }
 // DAA cost estimates that a payment can be linked to (approved first, then newest).
 function ceOptions(clientId, projectId) {
@@ -1402,11 +1423,11 @@ function Queue() {
             <td class="mono" style="font-weight: 500; white-space: nowrap">${pqNo(x.pqn)}</td>
             <td style="white-space: nowrap">${KIND[x.kind]}</td>
             <td><button class="namebtn" onClick=${function () { setUi({ open: x.id, denyOpen: false }); }}><b>${x.title}</b><span class="muted" style="font-size: 12px">${x.number || ''}</span></button></td>
-            <td>${clientName(x.clientId) || '—'}</td>
-            <td>${projectName(x.projectId) || '—'}</td>
+            <td>${clientName(x.clientId) ? html`<button class="cellink" title="Open in Cost estimates → Projects" onClick=${function () { openProject(x.clientId, null); }}>${clientName(x.clientId)}</button>` : '—'}</td>
+            <td>${projectName(x.projectId) ? html`<button class="cellink" title="Open in Cost estimates → Projects" onClick=${function () { openProject(x.clientId, x.projectId); }}>${projNumber(byId(G.data.projects, x.projectId)) ? html`<span class="mono" style="font-size: 12px">${projNumber(byId(G.data.projects, x.projectId))}</span><br />` : ''}${projectName(x.projectId)}</button>` : '—'}</td>
             <td class="num" style="white-space: nowrap">${x.date || '—'}</td>
             <td class="r num" style="font-weight: 600; white-space: nowrap">${x.amount == null ? '—' : fmt(x.amount) + ' €'}</td>
-            <td><span class=${'badge s' + st}>${STATUS[st]}</span></td>
+            <td><span class=${'pst pst' + st}>${STATUS[st]}</span></td>
             <td style="color: var(--ink-2)">${userName(x.by)}</td>
             <td style="padding-right: 16px"><button class="icon" aria-label=${x.kind === 'invoice' ? 'Download original invoice' : 'Download payment request'} title=${x.kind === 'invoice' ? 'Download original invoice' : 'Download payment request'} onClick=${function () { downloadOriginal(x); }}>${I.dl}</button></td>
           </tr>`;
@@ -1431,10 +1452,10 @@ function MCards(p) {
         <div class="mtop">
           <label class="ckwrap"><input class="ck" type="checkbox" aria-label=${'Select ' + pqNo(x.pqn)} checked=${!!ui.checked[x.id]} onChange=${function () { toggle(x.id); }} /></label>
           <span class="mono" style="font-weight: 600">${pqNo(x.pqn)}</span><span class="muted">· ${KIND[x.kind]}</span>
-          <span class=${'badge s' + st} style="margin-left: auto">${STATUS[st]}</span>
+          <span class=${'pst pst' + st} style="margin-left: auto">${STATUS[st]}</span>
         </div>
         <button class="namebtn open" onClick=${function () { setUi({ open: x.id, denyOpen: false }); }}><b>${x.title}</b><span class="muted" style="font-size: 12px">${x.number || ''}</span></button>
-        ${(cl || pr) && html`<div class="mmeta">${cl || '—'}${pr ? ' · ' + pr : ''}</div>`}
+        ${(cl || pr) && html`<div class="mmeta">${cl ? html`<button class="cellink" onClick=${function () { openProject(x.clientId, null); }}>${cl}</button>` : '—'}${pr ? html` · <button class="cellink" onClick=${function () { openProject(x.clientId, x.projectId); }}>${pr}</button>` : ''}</div>`}
         <div class="mcf"><span>${x.date || '—'} · ${userName(x.by)}</span><span class="amt num">${x.amount == null ? '—' : fmt(x.amount) + ' €'}</span>
           <button class="icon" aria-label=${x.kind === 'invoice' ? 'Download original invoice' : 'Download payment request'} onClick=${function () { downloadOriginal(x); }}>${I.dl}</button></div>
       </article>`;
@@ -1664,8 +1685,8 @@ function LinkedBox(p) {
   if (!ed) return html`<div class="card pad">
     <div class="row" style="justify-content: space-between"><b>Linked to</b>${canEdit && html`<button class="btn q sm" onClick=${open}>${x.clientId || x.projectId || est ? 'Edit links' : 'Add client, project or CE'}</button>`}</div>
     <dl class="kv" style="margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))">
-      <div><dt>Client</dt><dd>${clientName(x.clientId) || html`<span class="muted">—</span>`}</dd></div>
-      <div><dt>Project</dt><dd>${projectName(x.projectId) || html`<span class="muted">—</span>`}</dd></div>
+      <div><dt>Client</dt><dd>${clientName(x.clientId) ? html`<button class="cellink" onClick=${function () { openProject(x.clientId, null); }}>${clientName(x.clientId)}</button>` : html`<span class="muted">—</span>`}</dd></div>
+      <div><dt>Project</dt><dd>${projectName(x.projectId) ? html`<button class="cellink" onClick=${function () { openProject(x.clientId, x.projectId); }}>${projLabel(byId(G.data.projects, x.projectId))}</button>` : html`<span class="muted">—</span>`}</dd></div>
       <div><dt>Cost estimate</dt><dd>${est && est.ceId ? html`<button class="link" style="min-height: 0; padding: 0; text-align: left" onClick=${function () { setUi({ tab: 'ce', ce: est.ceId, ceView: 'list', open: null }); }}>${estLabel(est)}</button>` : est ? html`${est.number ? est.number + ' · ' : ''}${est.fileId ? html`<button class="link" style="min-height: 0; padding: 0" onClick=${function () { getBytes('/_blob/' + est.fileId).then(function (b) { saveFile(est.fileName, b); }, function (e) { toast(e.message, true); }); }}>${est.fileName}</button>` : ''}` : html`<span class="muted">None</span>`}</dd></div>
     </dl>
     ${x.linkEditedAt && html`<div class="muted" style="margin-top: 8px; font-size: 12px">Links last changed ${x.linkEditedAt} by ${userName(x.linkEditedBy)}</div>`}
@@ -2072,14 +2093,17 @@ function Users() {
         <div class="pad" style="border-bottom: 1px solid var(--line)"><h2 style="font-size: 17px">Team</h2><div class="muted" style="font-size: 13px">${top ? 'You can create any account, change roles and deactivate people.' : 'You can create account assistant accounts.'}</div></div>
         ${G.data.users.slice().sort(function (a, b) { return nameOf(a).localeCompare(nameOf(b)); }).map(function (u) {
           var ed = top && u.id !== me.id;
-          return html`<div key=${u.id} class="row pad" style="border-bottom: 1px solid var(--line-2); padding-block: 12px; ${u.active === false ? 'opacity: 0.6' : ''}">
+          var canLink = u.id !== me.id && u.active !== false && (top || (role === 'am' && u.role === 'aa'));
+          return html`<div key=${u.id} class="tm-row" style=${u.active === false ? 'opacity: 0.6' : ''}>
             <span class="av l" aria-hidden="true">${initials(u)}</span>
-            <div style="flex: 1 1 200px; min-width: 0"><b>${nameOf(u)}</b>${u.active === false ? html` <span class="badge s5">Deactivated</span>` : ''}${u.pending ? html` <span class="badge s1">Invitation pending</span>` : ''}<div class="muted" style="font-size: 12px; word-break: break-all">${u.position} · ${u.email}${has2fa(u) ? ' · 2-step on' : needs2fa(u) ? ' · 2-step pending' : ''}</div></div>
-            ${u.id !== me.id && u.active !== false && (top || (role === 'am' && u.role === 'aa')) && html`<button class="btn q sm" onClick=${function () { sendLink(u); }}>${u.pending ? 'Send invitation again' : 'Send password reset'}</button>`}
-            ${top && u.id !== me.id && has2fa(u) && html`<button class="btn q sm" onClick=${function () { patch('users', u.id, { totp: { on: false, secret: '' } }).then(function (r) { if (r) { logEv('security', 'Reset two-step sign-in for ' + nameOf(u)); toast('Two-step sign-in reset for ' + nameOf(u) + '. They set it up again at next sign-in.'); } }); }}>Reset 2-step</button>`}
-            ${u.role === 'aa' && html`<label class="row" style="font-size: 13px; gap: 6px">Manager ${top ? html`<select class="inp" style="width: auto" aria-label=${'Account manager for ' + nameOf(u)} value=${u.managerId || ''} onChange=${function (e) { patch('users', u.id, { managerId: e.target.value }); }}><option value="">Not assigned</option>${ams.map(function (m) { return html`<option value=${m.id}>${nameOf(m)}</option>`; })}</select>` : html`<b>${u.managerId ? userName(u.managerId) : 'Not assigned'}</b>`}</label>`}
-            ${ed ? html`<select class="inp" style="width: auto" aria-label=${'Role for ' + nameOf(u)} value=${u.role} onChange=${function (e) { var v = e.target.value; patch('users', u.id, { role: v }).then(function (r) { if (r) logEv('users', 'Role of ' + nameOf(u) + ' changed to ' + ROLE[v]); }); }}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select>
-              <button class="btn q sm" onClick=${function () { var on = u.active === false; patch('users', u.id, { active: on }).then(function (r) { if (r) logEv('users', (on ? 'Reactivated ' : 'Deactivated ') + nameOf(u)); }); }}>${u.active === false ? 'Reactivate' : 'Deactivate'}</button>` : html`<span class="badge s0">${ROLE[u.role]}</span>`}
+            <div style="min-width: 0"><b>${nameOf(u)}</b>${u.active === false ? html` <span class="badge s5">Deactivated</span>` : ''}${u.pending ? html` <span class="badge s1">Invitation pending</span>` : ''}<div class="muted" style="font-size: 12px; overflow-wrap: anywhere">${u.position} · ${u.email}${has2fa(u) ? ' · 2-step on' : needs2fa(u) ? ' · 2-step pending' : ''}</div></div>
+            <div class="tm-role">${ed ? html`<select class="inp sm" aria-label=${'Role for ' + nameOf(u)} value=${u.role} onChange=${function (e) { var v = e.target.value; patch('users', u.id, { role: v }).then(function (r) { if (r) logEv('users', 'Role of ' + nameOf(u) + ' changed to ' + ROLE[v]); }); }}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select>` : html`<span class="badge s0">${ROLE[u.role]}</span>`}</div>
+            <div class="tm-acts">
+              ${u.role === 'aa' && html`<label class="tm-mgr">Manager ${top ? html`<select class="inp sm" style="width: auto; min-width: 180px" aria-label=${'Account manager for ' + nameOf(u)} value=${u.managerId && byId(ams, u.managerId) ? u.managerId : ''} onChange=${function (e) { patch('users', u.id, { managerId: e.target.value }); }}><option value="">Not assigned</option>${ams.map(function (m) { return html`<option value=${m.id}>${nameOf(m)}</option>`; })}</select>` : html`<b style="color: var(--ink)">${u.managerId ? userName(u.managerId) : 'Not assigned'}</b>`}</label>`}
+              ${canLink && html`<button class="btn q sm" onClick=${function () { sendLink(u); }}>${u.pending ? 'Send invitation again' : 'Send password reset'}</button>`}
+              ${top && u.id !== me.id && has2fa(u) && html`<button class="btn q sm" onClick=${function () { patch('users', u.id, { totp: { on: false, secret: '' } }).then(function (r) { if (r) { logEv('security', 'Reset two-step sign-in for ' + nameOf(u)); toast('Two-step sign-in reset for ' + nameOf(u) + '. They set it up again at next sign-in.'); } }); }}>Reset 2-step</button>`}
+              ${ed && html`<button class="btn q sm" onClick=${function () { var on = u.active === false; patch('users', u.id, { active: on }).then(function (r) { if (r) logEv('users', (on ? 'Reactivated ' : 'Deactivated ') + nameOf(u)); }); }}>${u.active === false ? 'Reactivate' : 'Deactivate'}</button>`}
+            </div>
           </div>`;
         })}
         ${roles.length > 0 && html`<form class="stack pad" style="background: var(--bg)" onSubmit=${create}>
@@ -2330,7 +2354,9 @@ function App() {
   var a = useState('login'), authView = a[0], setAuth = a[1];
   useEffect(function () {
     var k = function (e) { if (e.key === 'Escape') { if (G.ui.help || G.ui.bug || G.ui.install) setUi({ help: false, bug: false, install: false }); else if (G.ui.privacy) setUi({ privacy: false }); else if (G.ui.nav) setUi({ nav: false }); else if (G.ui.modal) setUi({ modal: null }); else if (G.ui.profile) setUi({ profile: false }); else if (G.ui.open) setUi({ open: null }); else if (G.ui.bell || G.ui.menu) setUi({ bell: false, menu: false }); } };
-    document.addEventListener('keydown', k); return function () { document.removeEventListener('keydown', k); };
+    var out = function (e) { if ((G.ui.bell || G.ui.menu) && !(e.target.closest && e.target.closest('.bellw, .acctw'))) setUi({ bell: false, menu: false }); };
+    document.addEventListener('keydown', k); document.addEventListener('pointerdown', out);
+    return function () { document.removeEventListener('keydown', k); document.removeEventListener('pointerdown', out); };
   }, []);
   var body;
   if (G.noDb) body = html`<main class="auth gut"><div class="card box"><${Logo} w=${46} /><h1 style="font-size: 20px">The database is not available here</h1><p class="muted" style="margin: 0">Open this page from its claude.ai link while signed in to your DAA organization account.</p></div></main>`;
@@ -2984,8 +3010,24 @@ function Margin(p) {
   return html`<span class="num" style=${'font-weight: 600' + (m < 0 ? '; color: var(--danger)' : '')}>${ceMoney(m)}<span class="muted" style="font-weight: 400; font-size: 12px"> · ${String(pc).replace('.', ',')}%</span></span>`;
 }
 function Projects() {
-  var costs = useCosts(), net = true, os = useState(null), open = os[0], setOpen = os[1], es = useState(null), ed = es[0], setEd = es[1];
+  var costs = useCosts(), net = true, os = useState(G.ui.pjOpen || null), open = os[0], setOpen = os[1], es = useState(null), ed = es[0], setEd = es[1];
   var narrow = useNarrow();
+  useEffect(function () {
+    if (G.ui.pjFocus) { var id = G.ui.pjFocus; G.ui.pjFocus = null; G.ui.pjOpen = null; setTimeout(function () { var el = document.getElementById(id); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(function () { el.classList.remove('flash'); }, 1600); } }, 60); }
+  }, []);
+  var top = isTop(G.me.role);
+  async function delClient(cl) {
+    var np = G.data.projects.filter(function (p) { return p.clientId === cl.id; }).length, nc = G.data.ces.filter(function (c) { return c.clientId === cl.id; }).length;
+    if (np || nc) { toast(cl.name + ' still has ' + [np ? np + (np === 1 ? ' project' : ' projects') : '', nc ? nc + (nc === 1 ? ' cost estimate' : ' cost estimates') : ''].filter(Boolean).join(' and ') + '. Delete those first.', true); return; }
+    if (!confirm('Delete client ' + cl.name + '? Payment requests linked to it keep their data but lose the link. This cannot be undone.')) return;
+    if (await del('clients', cl.id)) { toast('Client deleted.'); }
+  }
+  async function delProject(p) {
+    var nc = G.data.ces.filter(function (c) { return c.projectId === p.id; }).length;
+    if (nc) { toast(projLabel(p) + ' still has ' + nc + (nc === 1 ? ' cost estimate' : ' cost estimates') + '. Delete or move them first.', true); return; }
+    if (!confirm('Delete project ' + projLabel(p) + '? Payment requests linked to it keep their data but lose the link. This cannot be undone.')) return;
+    if (await del('projects', p.id)) { toast('Project deleted.'); }
+  }
   useEffect(function () {
     var missing = G.data.clients.some(function (c) { return !c.code; }) || G.data.projects.some(function (p) { return !p.no; });
     if (missing) window.daa.post('/api/numbers/fill').then(function (r) { if (r.changed) toast('Gave identifiers and numbers to ' + r.changed + ' clients and projects.'); }, function () {});
@@ -3018,10 +3060,10 @@ function Projects() {
     ${ed && ed.kind === 'client' && !ed.id && html`<section class="card">${edit}</section>`}
     ${clients.map(function (cl) {
       var projects = G.data.projects.filter(function (p) { return p.clientId === cl.id; }).sort(function (a, b) { return (b.no || 0) - (a.no || 0); });
-      return html`<section key=${cl.id} class="card" style="overflow: hidden" aria-label=${cl.name}>
+      return html`<section key=${cl.id} id=${'cl-' + cl.id} class="card" style="overflow: hidden" aria-label=${cl.name}>
         <div class="pad row" style="justify-content: space-between; background: var(--bg); border-bottom: 1px solid var(--line-2)">
           <div class="row" style="gap: 10px"><span class="badge s4 mono">${cl.code || '??'}</span><b>${cl.name}</b>${cl.fee != null && html`<span class="muted" style="font-size: 13px">usual fee ${cl.fee}%</span>`}</div>
-          <div class="row"><button class="btn q sm" onClick=${function () { setEd({ kind: 'client', id: cl.id, name: cl.name, code: cl.code || '', fee: cl.fee == null ? '' : String(cl.fee) }); }}>Edit</button><button class="btn q sm" onClick=${function () { setEd({ kind: 'project', id: null, clientId: cl.id, name: '', no: '', year: '' }); }}>${I.plus} Project</button></div>
+          <div class="row"><button class="btn q sm" onClick=${function () { setEd({ kind: 'client', id: cl.id, name: cl.name, code: cl.code || '', fee: cl.fee == null ? '' : String(cl.fee) }); }}>Edit</button><button class="btn q sm" onClick=${function () { setEd({ kind: 'project', id: null, clientId: cl.id, name: '', no: '', year: '' }); }}>${I.plus} Project</button>${top && html`<button class="icon" aria-label=${'Delete client ' + cl.name} title="Delete client" onClick=${function () { delClient(cl); }}>${I.trash}</button>`}</div>
         </div>
         ${ed && ed.id === cl.id && edit}
         ${ed && ed.kind === 'project' && !ed.id && ed.clientId === cl.id && edit}
@@ -3030,14 +3072,14 @@ function Projects() {
           var est = projEstimated(p.id), ces = G.data.ces.filter(function (c) { return c.projectId === p.id; }), latest = ces.filter(ceLatest);
           var cost = costFor(function (x) { return x.projectId === p.id; }), isOpen = open === p.id;
           var pays = costs ? costs.filter(function (x) { return x.projectId === p.id || (x.ceId && ces.some(function (c) { return c.id === x.ceId; })); }) : [];
-          return html`<div key=${p.id} style="border-top: 1px solid var(--line-2)">
+          return html`<div key=${p.id} id=${'pj-' + p.id} style="border-top: 1px solid var(--line-2)">
             ${ed && ed.id === p.id ? edit : html`<div class="pj-row">
               <button class="link" style="text-align: left; min-height: 0" aria-expanded=${isOpen} onClick=${function () { setOpen(isOpen ? null : p.id); }}><span class="mono" style="font-size: 13px">${projNumber(p) || 'No number'}</span><br /><b>${p.name}</b></button>
               <span><span class="ce-lab">Estimates</span>${latest.length ? latest.length + (est.list.length ? ' · ' + est.list.length + ' approved' : '') : html`<span class="muted">None</span>`}</span>
               <span class="r num"><span class="ce-lab">Estimated (NET)</span>${est.net ? ceMoney(est.net) : html`<span class="muted">—</span>`}</span>
               <span class="r num"><span class="ce-lab">${costs ? 'Costs' : ''}</span>${costs ? ceMoney(cost) : ''}</span>
               <span class="r"><span class="ce-lab">${costs ? 'Margin' : ''}</span>${costs ? html`<${Margin} est=${est.net} cost=${cost} />` : ''}</span>
-              <button class="btn q sm" onClick=${function () { setEd({ kind: 'project', id: p.id, clientId: p.clientId, name: p.name, no: p.no ? String(p.no) : '', year: p.year || '' }); }}>Edit</button>
+              <span class="row" style="gap: 0; flex-wrap: nowrap; justify-content: flex-end"><button class="btn q sm" onClick=${function () { setEd({ kind: 'project', id: p.id, clientId: p.clientId, name: p.name, no: p.no ? String(p.no) : '', year: p.year || '' }); }}>Edit</button>${top && html`<button class="icon" aria-label=${'Delete project ' + p.name} title="Delete project" onClick=${function () { delProject(p); }}>${I.trash}</button>`}</span>
             </div>`}
             ${isOpen && html`<div class="pad stack" style="gap: 10px; background: var(--bg)">
               <div class="row" style="justify-content: space-between"><b style="font-size: 14px">Cost estimates</b><button class="btn q sm" onClick=${function () { var b = ceBlank(); b.clientId = p.clientId; b.projectId = p.id; b.projectName = p.name; var c = byId(G.data.clients, p.clientId); if (c && c.fee != null) b.fee = c.fee; G.ui.ceCopy = b; setUi({ ce: 'new' }); }}>${I.plus} New estimate for this project</button></div>
@@ -3050,7 +3092,7 @@ function Projects() {
               ${costs && html`<b style="font-size: 14px; margin-top: 6px">Payments linked to this project</b>
                 ${pays.length ? pays.sort(function (a, b) { return (b.pqn || 0) - (a.pqn || 0); }).map(function (x) { return html`<div key=${x.id} class="row" style="justify-content: space-between; font-size: 14px">
                   ${x.title ? html`<button class="link" style="text-align: left" onClick=${function () { setUi({ tab: 'queue', open: x.id }); }}><span class="mono">${pqNo(x.pqn)}</span> ${x.title}</button>` : html`<span><span class="mono">${pqNo(x.pqn)}</span> ${KIND[x.kind]}</span>`}
-                  <span class="row" style="gap: 10px"><span class="badge s1">${STATUS[x.status || 0]}</span><span class="num">${ceMoney(costOf(x, net))}</span></span></div>`; }) : html`<div class="muted" style="font-size: 13px">No payments linked yet. Link them from the payment queue (Linked to → DAA cost estimate or project).</div>`}`}
+                  <span class="row" style="gap: 10px"><span class=${'pst pst' + (x.status || 0)}>${STATUS[x.status || 0]}</span><span class="num">${ceMoney(costOf(x, net))}</span></span></div>`; }) : html`<div class="muted" style="font-size: 13px">No payments linked yet. Link them from the payment queue (Linked to → DAA cost estimate or project).</div>`}`}
             </div>`}
           </div>`;
         })}
@@ -3066,7 +3108,7 @@ function CeCosts(p) {
   var pays = costs.filter(function (x) { return sib.some(function (o) { return o.id === x.ceId; }); }), cost = r2(pays.reduce(function (n, x) { return n + costOf(x); }, 0)), net = ceTotals(ce).net;
   return html`<section class="card pad stack" aria-label="Linked payments" style="gap: 8px">
     <div class="row" style="justify-content: space-between"><b>Payments linked to this estimate</b>${ce.projectId && html`<button class="link" onClick=${function () { setUi({ ce: null, ceView: 'projects' }); }}>Project overview</button>`}</div>
-    ${pays.length ? html`${pays.map(function (x) { return html`<div key=${x.id} class="row" style="justify-content: space-between; font-size: 14px">${x.title ? html`<button class="link" style="text-align: left" onClick=${function () { setUi({ tab: 'queue', ce: null, open: x.id }); }}><span class="mono">${pqNo(x.pqn)}</span> ${x.title}</button>` : html`<span class="mono">${pqNo(x.pqn)}</span>`}<span class="row" style="gap: 10px"><span class="badge s1">${STATUS[x.status || 0]}</span><span class="num">${ceMoney(costOf(x))}</span></span></div>`; })}
+    ${pays.length ? html`${pays.map(function (x) { return html`<div key=${x.id} class="row" style="justify-content: space-between; font-size: 14px">${x.title ? html`<button class="link" style="text-align: left" onClick=${function () { setUi({ tab: 'queue', ce: null, open: x.id }); }}><span class="mono">${pqNo(x.pqn)}</span> ${x.title}</button>` : html`<span class="mono">${pqNo(x.pqn)}</span>`}<span class="row" style="gap: 10px"><span class=${'pst pst' + (x.status || 0)}>${STATUS[x.status || 0]}</span><span class="num">${ceMoney(costOf(x))}</span></span></div>`; })}
       <div class="row ce-tl" style="border-top: 1px solid var(--line); padding-top: 8px"><span>Estimate NET ${ceMoney(net)} − costs NET ${ceMoney(cost)}</span><${Margin} est=${net} cost=${cost} /></div>` : html`<div class="muted" style="font-size: 13px">None yet. In the payment queue, open a request → Linked to → DAA cost estimate.</div>`}
   </section>`;
 }
