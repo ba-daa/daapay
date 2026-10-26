@@ -1,6 +1,6 @@
 // DAA Pay service worker: lets the app open fast and show a clear message when offline.
 // Data (/api) and stored files (/_blob) always come from the server and are never cached here.
-var VERSION = 'daa-pay-v2';
+var VERSION = 'daa-pay-v3';
 var SHELL = ['/', '/api-shim.js', '/manifest.webmanifest', '/static/daa-logo.png', '/static/icon-192.png', '/static/IBMPlexSans-Regular.woff', '/static/IBMPlexSans-SemiBold.woff'];
 
 self.addEventListener('install', function (e) {
