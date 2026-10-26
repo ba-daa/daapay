@@ -318,7 +318,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.5.0';
+var APP_VERSION = '0.5.1';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -555,6 +555,7 @@ function parseInvoiceText(lines, sellerTin) {
     var v = nums.map(parseNum);
     out.items.push({ name: name, qty: v[0], price: v[1], total: v[v.length - 1] });
   });
+  out.money = []; lines.forEach(function (l) { (l.match(/\d{1,3}(?:[.\s]\d{3})*,\d{2}(?!\d)|\d+\.\d{2}(?!\d)/g) || []).forEach(function (m) { var n = parseNum(m); if (n > 0 && out.money.indexOf(n) < 0) out.money.push(n); }); });
   return out;
 }
 async function scanFile(file) {
@@ -600,7 +601,7 @@ function printRows(x) {
     { label: x.kind === 'invoice' ? 'Supplier' : 'Beneficiary', value: x.title },
     { label: x.kind === 'invoice' ? 'Invoice no.' : 'Reference', value: x.number || '—' },
     { label: 'Date', value: x.date || '—' }, { label: 'Client', value: clientName(x.clientId) || '—' }, { label: 'Project', value: projectName(x.projectId) || '—' },
-    { label: 'Amount', value: x.amount == null ? '—' : fmt(x.amount) + ' EUR' }, { label: 'Status', value: STATUS[x.status || 0] },
+    { label: 'Amount', value: x.amount == null ? '—' : fmt(x.amount) + ' EUR' + (x.kind === 'invoice' ? ' (NET ' + fmt(itemNet(x)) + ' + PDV ' + fmt(r2(x.amount - itemNet(x))) + ')' : '') }, { label: 'Status', value: STATUS[x.status || 0] },
     { label: 'Added by', value: userName(x.by) }
   ];
   if (x.kind === 'invoice') {
@@ -699,6 +700,43 @@ async function downloadOriginal(x) {
 
 // ---------- lookups
 function clientName(id) { var c = byId(G.data.clients, id); return c ? c.name : ''; }
+// Invoices are kept as NET + PDV. The split is read from the invoice when its amounts add up
+// (net × 1,21 or × 1,07 = total); otherwise 21% is assumed until someone corrects it.
+var VAT_RATES = [21, 7, 0];
+function vatSplit(total, money) {
+  if (total == null || isNaN(total)) return {};
+  for (var i = 0; i < VAT_RATES.length - 1; i++) { var r = VAT_RATES[i]; var hit = (money || []).filter(function (n) { return n < total && Math.abs(r2(n * (1 + r / 100)) - total) <= 0.02; })[0]; if (hit != null) return { net: hit, vat: r2(total - hit), netOf: total, vatRate: r, vatSrc: 'invoice' }; }
+  var n = r2(total / 1.21); return { net: n, vat: r2(total - n), netOf: total, vatRate: 21, vatSrc: 'assumed' };
+}
+function itemNet(x) {
+  if (x.kind !== 'invoice' || x.amount == null) return x.amount;
+  if (x.net != null && x.netOf === x.amount) return x.net;
+  return r2(x.amount / (1 + (x.vatRate == null ? 21 : x.vatRate) / 100));
+}
+function VatBox(p) {
+  var x = p.x, me = G.me, st = x.status || 0, es = useState(null), ed = es[0], setEd = es[1];
+  if (x.amount == null) return null;
+  var canEdit = isTop(me.role) || me.role === 'om' || me.role === 'am' || (x.by === me.id && st <= 2);
+  var net = itemNet(x), vat = r2(x.amount - net), fresh = x.net != null && x.netOf === x.amount;
+  var src = !fresh && x.vatSrc ? 'recalculated for the new amount' : x.vatSrc === 'invoice' ? 'read from the invoice' : x.vatSrc === 'manual' ? 'set by hand' : 'PDV 21% assumed, check the invoice';
+  async function save() {
+    var rate = ed.rate, v;
+    if (rate === 'other') { v = parseNum(ed.vat); if (isNaN(v) || v < 0 || v >= x.amount) { setEd(Object.assign({}, ed, { err: 'Enter the PDV amount from the invoice.' })); return; } }
+    else v = r2(x.amount - r2(x.amount / (1 + rate / 100)));
+    if (await patch('items', x.id, { vatRate: rate, vat: v, net: r2(x.amount - v), netOf: x.amount, vatSrc: 'manual' })) { logEv('edit', 'Set NET/PDV on ' + pqNo(x.pqn) + ': ' + fmt(r2(x.amount - v)) + ' + ' + fmt(v) + ' EUR', x.id); setEd(null); }
+  }
+  return html`<div class="card pad stack" style="gap: 8px">
+    <div class="row" style="justify-content: space-between"><b>NET + PDV</b>${canEdit && !ed && html`<button class="btn q sm" onClick=${function () { setEd({ rate: x.vatRate == null ? 21 : x.vatRate, vat: numIn(vat), err: '' }); }}>Correct</button>`}</div>
+    <div class="row num" style="gap: 6px 16px; font-size: 15px"><span><span class="muted">NET </span><b>${fmt(net)} €</b></span><span><span class="muted">PDV${x.vatRate === 'other' ? '' : ' ' + (x.vatRate == null ? 21 : x.vatRate) + '%'} </span>${fmt(vat)} €</span><span><span class="muted">Total </span>${fmt(x.amount)} €</span></div>
+    <div class="muted" style="font-size: 12px">${src}</div>
+    ${ed && html`<div class="stack" style="gap: 8px">
+      <div class="row" role="radiogroup" aria-label="PDV rate">${VAT_RATES.concat(['other']).map(function (r) { return html`<button key=${r} role="radio" aria-checked=${ed.rate === r} class=${'chip' + (ed.rate === r ? ' on' : '')} onClick=${function () { setEd(Object.assign({}, ed, { rate: r, err: '' })); }}>${r === 'other' ? 'Mixed / other' : r + '%'}</button>`; })}</div>
+      ${ed.rate === 'other' && html`<${Field} label="PDV amount on the invoice (EUR)"><input id=${'vat-' + x.id} class="inp num" inputmode="decimal" style="max-width: 200px" value=${ed.vat} onInput=${function (e) { setEd(Object.assign({}, ed, { vat: e.target.value, err: '' })); }} /><//>`}
+      ${ed.err && html`<div class="alert e" role="alert">${ed.err}</div>`}
+      <div class="row"><button class="btn sm" onClick=${save}>Save</button><button class="btn q sm" onClick=${function () { setEd(null); }}>Cancel</button></div>
+    </div>`}
+  </div>`;
+}
 function projectName(id) { var p = byId(G.data.projects, id); return p ? p.name : ''; }
 // DAA cost estimates that a payment can be linked to (approved first, then newest).
 function ceOptions(clientId, projectId) {
@@ -948,6 +986,7 @@ var HELP = [
     'Tap + (or Add to payment queue) and choose Upload invoices. Pick one or many PDFs or photos.',
     'Every page is scanned for the fiscal QR code. Each QR code becomes its own item in the queue with its amount, date, supplier PIB and IKOF. Supplier name, address, invoice number, due date, bank account and items are read from the invoice text.',
     'Check the supplier name and bank account before you submit. Corrections are saved in the beneficiary archive under the supplier’s PIB, so the next invoice from them is filled in for you.',
+    'Invoices are kept as NET + PDV. The split is read from the invoice (Osnovica + PDV); if it cannot be read, 21% is assumed and the preview says so. Correct it in the preview under NET + PDV (21%, 7%, 0% or a mixed PDV amount). Project margins use the NET.',
     'No QR code? Enter the details by hand in the same form, or leave them and complete the item later from its preview. Invoices already in the queue are skipped.'] },
   { id: 'requests', title: 'Refunds and payments by contract', text: [
     'Refund request: who is refunded, how they are paid (domestic account or IBAN/SWIFT), the reason and the amount. Attach receipts.',
@@ -1548,6 +1587,7 @@ function Drawer() {
             ${x.address && html`<div style="grid-column: 1 / -1"><span class="muted">Address </span>${x.address}</div>`}</div>`}
           ${x.kind !== 'invoice' && html`<div class="muted" style="font-size: 13px">${x.number} · submitted ${x.date}</div>`}
           ${x.kind === 'invoice' && html`<${AccountBox} x=${x} />`}
+          ${x.kind === 'invoice' && html`<${VatBox} x=${x} />`}
           <div class="row">
             <button class="btn" disabled=${!!G.ui.busy} onClick=${function () { downloadPdf([x]); }}>${I.pdf} ${G.ui.busy === 'pdf' ? 'Preparing PDF…' : 'Download as PDF'}</button>
             ${x.kind === 'invoice' && x.fileId && html`<button class="btn o" onClick=${function () { downloadOriginal(x); }}>${I.dl} Original invoice</button>`}
@@ -1836,7 +1876,7 @@ function AddModal() {
             var it;
             if (draftOk(s.manual)) {
               var mf = draftFields(s.manual);
-              it = Object.assign({}, common, mf.iso ? { iso: mf.iso, date: mf.date } : {}, { kind: 'invoice', manual: true, supplierSrc: 'manual', title: mf.name, pib: mf.pib, address: mf.address, account: mf.account ? acctNorm(mf.account) : '', bank: acctOk(mf.account) ? bankName(mf.account) : '', acctConfirmed: acctOk(mf.account) && !acctValid(mf.account), number: mf.number || 'Manual entry', amount: mf.amount, lineItems: mf.items });
+              it = Object.assign({}, common, mf.iso ? { iso: mf.iso, date: mf.date } : {}, { kind: 'invoice', manual: true, supplierSrc: 'manual', title: mf.name, pib: mf.pib, address: mf.address, account: mf.account ? acctNorm(mf.account) : '', bank: acctOk(mf.account) ? bankName(mf.account) : '', acctConfirmed: acctOk(mf.account) && !acctValid(mf.account), number: mf.number || 'Manual entry', amount: mf.amount, lineItems: mf.items }); Object.assign(it, vatSplit(it.amount, []));
               if (mf.pib) await upsertBen({ pib: mf.pib, name: mf.name, address: mf.address, account: acctOk(mf.account) ? acctNorm(mf.account) : '' });
             } else it = Object.assign({}, common, { kind: 'invoice', title: s.name, number: 'Needs details', amount: null, guess: s.manual || null });
             created.push(Object.assign(it, { fileId: fileId, fileName: s.name }));
@@ -1850,7 +1890,7 @@ function AddModal() {
             if (nm) await upsertBen({ pib: q.tin, name: nm, address: tx.address || '', pdv: tx.pdv || '', account: avOk ? acctNorm(av) : '' });
             created.push(Object.assign({}, common, { kind: 'invoice', title: nm || 'Supplier PIB ' + q.tin, supplierSrc: q.nameEdit != null ? 'manual' : dn.from,
               pib: q.tin, pdv: tx.pdv || '', address: tx.address || '', due: tx.due || '', account: av.trim() ? acctNorm(av) : '', acctConfirmed: avOk && !acctValid(av) && q.acctEdit != null, bank: avOk ? bankName(av, q.acctEdit == null ? tx.bank : '') : '', lineItems: tx.items || [], number: tx.number || 'Fiscal no. ' + q.ord,
-              amount: isNaN(q.prc) ? null : q.prc, iso: iso, date: isoToDate(iso), time: q.crtd.slice(11, 19),
+              amount: isNaN(q.prc) ? null : q.prc }, vatSplit(isNaN(q.prc) ? null : q.prc, tx.money), { iso: iso, date: isoToDate(iso), time: q.crtd.slice(11, 19),
               iic: q.iic, crtd: q.crtd, ord: q.ord, bu: q.bu, cr: q.cr, sw: q.sw, qrUrl: q.url, fileId: fileId, fileName: s.name, pdfPages: q.page == null ? null : [q.page] }));
           }
         }
@@ -2415,11 +2455,12 @@ function ceTotals(ce) {
   return { secs: secs, sub: sub, feeBase: base, fee: fee, net: net, vat: vat, grand: r2(net + vat) };
 }
 // Estimate number 199-01/26: running number, iteration, year of issue. Project number P012-01/26: project, client identifier, year.
-function ceYear(ce) { return (ce.date || todayIso()).slice(2, 4); }
+function ceYear(ce) { return ce.year || (ce.date || todayIso()).slice(2, 4); }
 function ceNumber(ce) { if (ce.base == null) return (ce.projNo || '?') + '-' + pad(ce.seq || 1, 2) + '/' + (ce.year || ceYear(ce)); return ce.base + '-' + pad(ce.iter || 1, 2) + '/' + ceYear(ce); }
-function ceNextBase() { return G.data.ces.reduce(function (m, c) { return Math.max(m, c.base || 0); }, 0) + 1; }
-function ceNextIter(base) { return G.data.ces.reduce(function (m, c) { return c.base === base ? Math.max(m, c.iter || 0) : m; }, 0) + 1; }
-function ceLatest(c) { return !G.data.ces.some(function (o) { return o.base != null && o.base === c.base && (o.iter || 1) > (c.iter || 1); }); }
+function ceNextBase(year) { year = year || todayIso().slice(2, 4); return G.data.ces.reduce(function (m, c) { return c.base != null && ceYear(c) === year ? Math.max(m, c.base) : m; }, 0) + 1; }
+function ceNextIter(base, year) { return G.data.ces.reduce(function (m, c) { return c.base === base && ceYear(c) === year ? Math.max(m, c.iter || 0) : m; }, 0) + 1; }
+function ceSame(a, b) { return a.base != null ? a.base === b.base && ceYear(a) === ceYear(b) : a.id === b.id; }
+function ceLatest(c) { return !G.data.ces.some(function (o) { return o.base != null && ceSame(o, c) && (o.iter || 1) > (c.iter || 1); }); }
 function clientCode(id) { var c = byId(G.data.clients, id); return c && c.code ? c.code : '??'; }
 function projNumber(p) { return p && p.no ? 'P' + pad(p.no, 3) + '-' + clientCode(p.clientId) + '/' + (p.year || '') : ''; }
 function projLabel(p) { var n = projNumber(p); return (n ? n + ' · ' : '') + p.name; }
@@ -2433,8 +2474,8 @@ async function ceSeedPriceList() {
   logEv('data', 'Loaded the standard price list (' + CE_SEED.length + ' services)');
 }
 function ceBlank() {
-  return { base: ceNextBase(), iter: 1, clientId: '', projectId: '', title: '', titleEn: '', projectName: '', projectNameEn: '', contact: '', pmId: G.me.id, date: todayIso(),
-    en: false, fee: 10, vat: true, status: 'draft', sections: [{ id: uid('s'), title: '', titleEn: '', lines: [] }], notes: [{ std: 'eur' }, { std: 'valid' }] };
+  return { base: ceNextBase(), iter: 1, year: todayIso().slice(2, 4), clientId: '', projectId: '', title: '', titleEn: '', projectName: '', projectNameEn: '', contact: '', pmId: G.me.id, date: todayIso(),
+    en: false, fee: 10, vat: false, status: 'draft', sections: [{ id: uid('s'), title: '', titleEn: '', lines: [] }], notes: [{ std: 'eur' }, { std: 'valid' }] };
 }
 
 // ---------- PDF in the DAA layout
@@ -2634,7 +2675,7 @@ function Estimates() {
 }
 function CeList() {
   var narrow = useNarrow(), fs = useState({ q: '', client: 'all', status: 'all', all: false }), f = fs[0], setF = fs[1];
-  var iters = function (c) { return c.base == null ? 1 : G.data.ces.filter(function (o) { return o.base === c.base; }).length; };
+  var iters = function (c) { return c.base == null ? 1 : G.data.ces.filter(function (o) { return ceSame(o, c); }).length; };
   var list = G.data.ces.filter(function (c) {
     if (!f.all && !ceLatest(c)) return false;
     if (f.client !== 'all' && c.clientId !== f.client) return false;
@@ -2699,8 +2740,8 @@ function CeEditor() {
     if (!ce.clientId) { setErr('Choose the client.'); return false; }
     if (!(ce.base > 0)) { setErr('Add the running number of the estimate, for example 199.'); return false; }
     if (!ce.title.trim()) { setErr('Add a title, for example “Usluge AV produkcije – korporativni video”.'); return false; }
-    var clash = G.data.ces.filter(function (c) { return c.id !== ce.id && c.base === ce.base && (c.iter || 1) === (ce.iter || 1); })[0];
-    if (clash) { setErr(ceNumber(ce) + ' is already used by “' + (clash.title || '') + '”. The next free running number is ' + ceNextBase() + '.'); return false; }
+    var clash = G.data.ces.filter(function (c) { return c.id !== ce.id && ceSame(c, ce) && (c.iter || 1) === (ce.iter || 1); })[0];
+    if (clash) { setErr(ceNumber(ce) + ' is already used by “' + (clash.title || '') + '”. The next free running number is ' + ceNextBase(ceYear(ce)) + '.'); return false; }
     setBusy(true);
     var id = ce.id || uid('ce'), data = Object.assign({}, ce); delete data.id;
     data.sections = data.sections.map(function (s) { return Object.assign({}, s, { lines: (s.lines || []).map(function (l) { var o = Object.assign({}, l); delete o.qtyT; delete o.priceT; return o; }) }); });
@@ -2731,7 +2772,7 @@ function CeEditor() {
   }
   function duplicate(iteration) {
     var c = JSON.parse(JSON.stringify(ce)); delete c.id; delete c.by; delete c.ts; delete c.created; delete c.updatedAt; delete c.updatedBy; delete c.projNo; delete c.seq; delete c.year;
-    if (iteration) { c.base = ce.base; c.iter = ceNextIter(ce.base); } else { c.base = ceNextBase(); c.iter = 1; c.title = c.title + ' (kopija)'; }
+    if (iteration) { c.base = ce.base; c.year = ceYear(ce); c.iter = ceNextIter(ce.base, c.year); } else { c.year = todayIso().slice(2, 4); c.base = ceNextBase(c.year); c.iter = 1; c.title = c.title + ' (kopija)'; }
     c.status = 'draft'; c.date = todayIso();
     G.ui.ceCopy = c; setUi({ ce: 'new' }); toast((iteration ? 'New iteration ' : 'Copy ') + ceNumber(c) + ' is ready. Save it to keep it.');
   }
@@ -2758,7 +2799,7 @@ function CeEditor() {
         <${Field} label="Client" req><select id="ce-client" class="inp" value=${ce.clientId} onChange=${function (e) { setClient(e.target.value); }}><option value="">Choose…</option>${G.data.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (c) { return html`<option value=${c.id}>${c.name}</option>`; })}</select><//>
         <${Field} label="Project" hint=${ce.clientId ? '' : 'Choose the client first'}><select id="ce-project" class="inp" value=${ce.projectId} disabled=${!ce.clientId} onChange=${function (e) { setProject(e.target.value); }}><option value="">—</option>${projects.map(function (p) { return html`<option value=${p.id}>${projLabel(p)}</option>`; })}${ce.clientId && html`<option value="__new">+ New project…</option>`}</select><//>
         <${Field} label="Estimate number" req hint=${ce.base == null ? 'Old number ' + ceNumber(ce) + '; set the running number' : 'Running number - iteration / year of issue'}><div class="row" style="flex-wrap: nowrap; gap: 6px"><input id="ce-base" class="inp mono" aria-label="Running number" inputmode="numeric" style="flex: 2" value=${ce.base == null ? '' : ce.base} onInput=${function (e) { upd({ base: parseInt(e.target.value, 10) || null }); }} /><span aria-hidden="true">-</span><input id="ce-iter" class="inp mono" aria-label="Iteration" inputmode="numeric" style="flex: 1" value=${pad(ce.iter || 1, 2)} onInput=${function (e) { upd({ iter: parseInt(e.target.value, 10) || 1 }); }} /><span aria-hidden="true">/${ceYear(ce)}</span></div><//>
-        <${Field} label="Date"><input id="ce-date" class="inp" type="date" value=${ce.date} onInput=${function (e) { upd({ date: e.target.value }); }} /><//>
+        <${Field} label="Date"><input id="ce-date" class="inp" type="date" value=${ce.date} onInput=${function (e) { var d = e.target.value, p2 = { date: d }; if (!ce.id && (ce.iter || 1) === 1 && d) { p2.year = d.slice(2, 4); if (p2.year !== ceYear(ce)) p2.base = ceNextBase(p2.year); } upd(p2); }} /><//>
         <${Field} label="Title" req wide><input id="ce-title" class="inp" placeholder="Usluge AV produkcije – korporativni video" value=${ce.title} onInput=${function (e) { upd({ title: e.target.value }); }} />${enIn(ce.titleEn, function (e) { upd({ titleEn: e.target.value }); }, 'Title in English', 'ce-title-en')}<//>
         <${Field} label="Project name" wide hint="As it should appear on the estimate"><input id="ce-pname" class="inp" value=${ce.projectName} onInput=${function (e) { upd({ projectName: e.target.value }); }} />${enIn(ce.projectNameEn, function (e) { upd({ projectNameEn: e.target.value }); }, 'Project name in English', 'ce-pname-en')}<//>
         <${Field} label="Contact person"><input id="ce-contact" class="inp" value=${ce.contact} onInput=${function (e) { upd({ contact: e.target.value }); }} /><//>
@@ -2823,7 +2864,7 @@ function CeEditor() {
     <${CeCosts} ce=${ce} />
     <div class="row" style="justify-content: space-between">
       <div class="muted" style="font-size: 12px">${ce.id ? 'Created by ' + userName(ce.by) + ' · ' + (ce.created || '') + (ce.updatedAt ? ' · last saved ' + ce.updatedAt + ' by ' + userName(ce.updatedBy) : '') : 'Not saved yet'}</div>
-      <div class="row">${ce.id && ce.base != null && html`<button class="btn o sm" onClick=${function () { duplicate(true); }}>New iteration (${ce.base}-${pad(ceNextIter(ce.base), 2)})</button>`}${ce.id && html`<button class="btn q sm" onClick=${function () { duplicate(false); }}>Copy as new estimate</button>`}${ce.id && canDelete && html`<button class="btn q sm" onClick=${remove}>${I.trash} Delete</button>`}</div>
+      <div class="row">${ce.id && ce.base != null && html`<button class="btn o sm" onClick=${function () { duplicate(true); }}>New iteration (${ce.base}-${pad(ceNextIter(ce.base, ceYear(ce)), 2)})</button>`}${ce.id && html`<button class="btn q sm" onClick=${function () { duplicate(false); }}>Copy as new estimate</button>`}${ce.id && canDelete && html`<button class="btn q sm" onClick=${remove}>${I.trash} Delete</button>`}</div>
     </div>
     ${pick != null && html`<${ServicePicker} onPick=${addFromPrice} onClose=${function () { setPick(null); }} />`}
   </main>`;
@@ -2912,10 +2953,10 @@ function useCosts() {
   }, []);
   return allowed ? d : null;
 }
-function costOf(x, net) { return net && x.kind === 'invoice' ? r2(x.amount / (1 + CE_VAT / 100)) : x.amount; }
+function costOf(x) { return x.net != null ? x.net : x.amount; }
 function projEstimated(pid) {
   var byBase = {};
-  G.data.ces.forEach(function (c) { if (c.projectId !== pid || c.status !== 'approved') return; var k = c.base != null ? 'b' + c.base : c.id; if (!byBase[k] || (c.iter || 1) > (byBase[k].iter || 1)) byBase[k] = c; });
+  G.data.ces.forEach(function (c) { if (c.projectId !== pid || c.status !== 'approved') return; var k = c.base != null ? 'b' + c.base + '/' + ceYear(c) : c.id; if (!byBase[k] || (c.iter || 1) > (byBase[k].iter || 1)) byBase[k] = c; });
   var list = Object.keys(byBase).map(function (k) { return byBase[k]; });
   return { list: list, net: r2(list.reduce(function (n, c) { return n + ceTotals(c).net; }, 0)) };
 }
@@ -2925,7 +2966,7 @@ function Margin(p) {
   return html`<span class="num" style=${'font-weight: 600' + (m < 0 ? '; color: var(--danger)' : '')}>${ceMoney(m)}<span class="muted" style="font-weight: 400; font-size: 12px"> · ${String(pc).replace('.', ',')}%</span></span>`;
 }
 function Projects() {
-  var costs = useCosts(), ns = useState(false), net = ns[0], setNet = ns[1], os = useState(null), open = os[0], setOpen = os[1], es = useState(null), ed = es[0], setEd = es[1];
+  var costs = useCosts(), net = true, os = useState(null), open = os[0], setOpen = os[1], es = useState(null), ed = es[0], setEd = es[1];
   var narrow = useNarrow();
   useEffect(function () {
     var missing = G.data.clients.some(function (c) { return !c.code; }) || G.data.projects.some(function (p) { return !p.no; });
@@ -2953,9 +2994,8 @@ function Projects() {
   </div>`;
   return html`
     <section class="card pad row" style="justify-content: space-between">
-      <div class="muted" style="font-size: 13px; max-width: 70ch">Each client has an identifier (01, 02 …) and each of its projects a number: <span class="mono">P012-01/26</span> = project 12 of client 01, opened in 2026. ${costs ? 'Estimated = NET of the approved estimates (latest iteration). Costs = payment queue requests linked to the project, except denied ones.' : ''}</div>
-      <div class="row">${costs && html`<label class="row" style="gap: 8px; font-size: 13px"><input type="checkbox" checked=${net} onChange=${function (e) { setNet(e.target.checked); }} /> Supplier invoices without PDV (÷ 1,21)</label>`}
-        <button class="btn sm" onClick=${function () { setEd({ kind: 'client', id: null, name: '', code: '', fee: '' }); }}>${I.plus} New client</button></div>
+      <div class="muted" style="font-size: 13px; max-width: 70ch">Each client has an identifier (01, 02 …) and each of its projects a number: <span class="mono">P012-01/26</span> = project 12 of client 01, opened in 2026. ${costs ? 'Estimated = NET of the approved estimates (latest iteration). Costs = NET of the payment queue requests linked to the project (invoices without PDV), except denied ones.' : ''}</div>
+      <div class="row"><button class="btn sm" onClick=${function () { setEd({ kind: 'client', id: null, name: '', code: '', fee: '' }); }}>${I.plus} New client</button></div>
     </section>
     ${ed && ed.kind === 'client' && !ed.id && html`<section class="card">${edit}</section>`}
     ${clients.map(function (cl) {
@@ -2967,7 +3007,7 @@ function Projects() {
         </div>
         ${ed && ed.id === cl.id && edit}
         ${ed && ed.kind === 'project' && !ed.id && ed.clientId === cl.id && edit}
-        ${!narrow && projects.length > 0 && html`<div class="pj-row pj-head muted"><span>Project</span><span>Estimates</span><span class="r">Estimated (NET)</span><span class="r">${costs ? 'Costs' : ''}</span><span class="r">${costs ? 'Margin' : ''}</span><span></span></div>`}
+        ${!narrow && projects.length > 0 && html`<div class="pj-row pj-head muted"><span>Project</span><span>Estimates</span><span class="r">Estimated (NET)</span><span class="r">${costs ? 'Costs (NET)' : ''}</span><span class="r">${costs ? 'Margin' : ''}</span><span></span></div>`}
         ${projects.map(function (p) {
           var est = projEstimated(p.id), ces = G.data.ces.filter(function (c) { return c.projectId === p.id; }), latest = ces.filter(ceLatest);
           var cost = costFor(function (x) { return x.projectId === p.id; }), isOpen = open === p.id;
@@ -2984,7 +3024,7 @@ function Projects() {
             ${isOpen && html`<div class="pad stack" style="gap: 10px; background: var(--bg)">
               <div class="row" style="justify-content: space-between"><b style="font-size: 14px">Cost estimates</b><button class="btn q sm" onClick=${function () { var b = ceBlank(); b.clientId = p.clientId; b.projectId = p.id; b.projectName = p.name; var c = byId(G.data.clients, p.clientId); if (c && c.fee != null) b.fee = c.fee; G.ui.ceCopy = b; setUi({ ce: 'new' }); }}>${I.plus} New estimate for this project</button></div>
               ${latest.length ? latest.sort(function (a, b) { return (b.base || 0) - (a.base || 0); }).map(function (c) {
-                var t = ceTotals(c), sib = G.data.ces.filter(function (o) { return c.base != null ? o.base === c.base : o.id === c.id; }), cc = costFor(function (x) { return sib.some(function (o) { return o.id === x.ceId; }); });
+                var t = ceTotals(c), sib = G.data.ces.filter(function (o) { return ceSame(c, o); }), cc = costFor(function (x) { return sib.some(function (o) { return o.id === x.ceId; }); });
                 var counted = c.status === 'approved' ? null : est.list.filter(function (o) { return sib.some(function (x) { return x.id === o.id; }); })[0];
                 return html`<div key=${c.id} class="row" style="justify-content: space-between; font-size: 14px"><span><button class="link" style="text-align: left" onClick=${function () { setUi({ ce: c.id }); }}><span class="mono">${ceNumber(c)}</span> ${c.title}</button>${counted && html`<span class="muted" style="display: block; font-size: 12px">Counted in the margin: approved ${ceNumber(counted)} (${ceMoney(ceTotals(counted).net)})</span>`}</span>
                   <span class="row" style="gap: 10px"><span class=${'badge ' + ceBadge(c.status)}>${CE_STATUS[c.status || 'draft']}</span><span class="num">${ceMoney(t.net)}</span>${costs && html`<span class="muted num" style="font-size: 12px">linked ${ceMoney(cc)}</span>`}</span></div>`;
@@ -3004,12 +3044,12 @@ function Projects() {
 function CeCosts(p) {
   var costs = useCosts(), ce = p.ce;
   if (!costs || !ce.id) return null;
-  var sib = G.data.ces.filter(function (o) { return ce.base != null ? o.base === ce.base : o.id === ce.id; });
-  var pays = costs.filter(function (x) { return sib.some(function (o) { return o.id === x.ceId; }); }), cost = r2(pays.reduce(function (n, x) { return n + x.amount; }, 0)), net = ceTotals(ce).net;
+  var sib = G.data.ces.filter(function (o) { return ceSame(ce, o); });
+  var pays = costs.filter(function (x) { return sib.some(function (o) { return o.id === x.ceId; }); }), cost = r2(pays.reduce(function (n, x) { return n + costOf(x); }, 0)), net = ceTotals(ce).net;
   return html`<section class="card pad stack" aria-label="Linked payments" style="gap: 8px">
     <div class="row" style="justify-content: space-between"><b>Payments linked to this estimate</b>${ce.projectId && html`<button class="link" onClick=${function () { setUi({ ce: null, ceView: 'projects' }); }}>Project overview</button>`}</div>
-    ${pays.length ? html`${pays.map(function (x) { return html`<div key=${x.id} class="row" style="justify-content: space-between; font-size: 14px">${x.title ? html`<button class="link" style="text-align: left" onClick=${function () { setUi({ tab: 'queue', ce: null, open: x.id }); }}><span class="mono">${pqNo(x.pqn)}</span> ${x.title}</button>` : html`<span class="mono">${pqNo(x.pqn)}</span>`}<span class="row" style="gap: 10px"><span class="badge s1">${STATUS[x.status || 0]}</span><span class="num">${ceMoney(x.amount)}</span></span></div>`; })}
-      <div class="row ce-tl" style="border-top: 1px solid var(--line); padding-top: 8px"><span>Estimate NET ${ceMoney(net)} − costs ${ceMoney(cost)}</span><${Margin} est=${net} cost=${cost} /></div>` : html`<div class="muted" style="font-size: 13px">None yet. In the payment queue, open a request → Linked to → DAA cost estimate.</div>`}
+    ${pays.length ? html`${pays.map(function (x) { return html`<div key=${x.id} class="row" style="justify-content: space-between; font-size: 14px">${x.title ? html`<button class="link" style="text-align: left" onClick=${function () { setUi({ tab: 'queue', ce: null, open: x.id }); }}><span class="mono">${pqNo(x.pqn)}</span> ${x.title}</button>` : html`<span class="mono">${pqNo(x.pqn)}</span>`}<span class="row" style="gap: 10px"><span class="badge s1">${STATUS[x.status || 0]}</span><span class="num">${ceMoney(costOf(x))}</span></span></div>`; })}
+      <div class="row ce-tl" style="border-top: 1px solid var(--line); padding-top: 8px"><span>Estimate NET ${ceMoney(net)} − costs NET ${ceMoney(cost)}</span><${Margin} est=${net} cost=${cost} /></div>` : html`<div class="muted" style="font-size: 13px">None yet. In the payment queue, open a request → Linked to → DAA cost estimate.</div>`}
   </section>`;
 }
 

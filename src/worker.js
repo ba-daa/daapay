@@ -2,7 +2,7 @@
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.1';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -430,7 +430,7 @@ async function writeDoc(env, me, b) {
     if (op === 'delete' && cur && cur.by !== me.id && !top) deny('Only the author, the CEO or the Super-admin can delete a cost estimate.');
     if (op !== 'delete') {
       if (cur) { next.by = cur.by; next.ts = cur.ts; next.created = cur.created; } else { next.by = me.id; next.ts = now(); }
-      const no = (d) => d.base != null ? d.base + '-' + d.iter : 'old:' + d.projNo + '-' + d.seq + '/' + d.year;
+      const no = (d) => d.base != null ? d.base + '-' + d.iter + '/' + (d.year || String(d.date || '').slice(2, 4)) : 'old:' + d.projNo + '-' + d.seq + '/' + d.year;
       if ((await allDocs(env, 'ces')).some((c) => c.id !== id && no(c) === no(next))) fail(409, 'Cost estimate ' + next.base + '-' + String(next.iter).padStart(2, '0') + ' already exists. Use the next free number.');
     }
   } else if (col === 'svc' || col === 'svccats') {
@@ -687,7 +687,9 @@ async function projectCosts(env, me) {
   if (!(isTop(me.role) || me.role === 'om' || me.role === 'am')) fail(403, 'Your role cannot see project costs.');
   const full = isTop(me.role) || me.role === 'om';
   const items = (await allDocs(env, 'items')).filter((x) => x.status !== 5 && (x.projectId || (x.estimate && x.estimate.ceId)));
-  return json({ items: items.map((x) => ({ id: x.id, pqn: x.pqn, kind: x.kind, amount: Number(x.amount) || 0, status: x.status || 0, projectId: x.projectId || '', ceId: (x.estimate && x.estimate.ceId) || '', title: full ? (x.title || '') : '' })) });
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const netOf = (x) => { const a = Number(x.amount) || 0; if (x.kind !== 'invoice') return a; if (x.net != null && x.netOf === x.amount) return Number(x.net); const r = x.vatRate === 'other' || x.vatRate == null ? 21 : Number(x.vatRate); return r2(a / (1 + r / 100)); };
+  return json({ items: items.map((x) => ({ id: x.id, pqn: x.pqn, kind: x.kind, amount: Number(x.amount) || 0, net: netOf(x), status: x.status || 0, projectId: x.projectId || '', ceId: (x.estimate && x.estimate.ceId) || '', title: full ? (x.title || '') : '' })) });
 }
 
 // Announcements from the CEO or Super-admin: banner on the home page, a notification and an email for everyone.
