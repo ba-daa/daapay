@@ -175,6 +175,27 @@ dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break:
 .mhead { display: flex; align-items: center; gap: 12px; padding: 18px 16px 14px 24px; border-bottom: 1px solid var(--line-2); }
 .mbody { padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; }
 .mfoot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 14px 24px 20px; border-top: 1px solid var(--line-2); }
+.ce-line { display: grid; grid-template-columns: minmax(0, 1fr) 90px 150px 110px 110px 40px 132px; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line-2); align-items: start; }
+.ce-line.ce-head { font-size: 12px; font-weight: 600; padding-top: 8px; padding-bottom: 8px; border-top: 0; }
+.ce-line > label { display: flex; flex-direction: column; gap: 4px; }
+.ce-lab { display: none; font-size: 12px; font-weight: 500; color: var(--muted); }
+.ce-fee { align-items: center; justify-content: center; min-height: 44px; }
+.ce-fee input { width: 20px; height: 20px; accent-color: var(--ink); }
+.inp.ceen { background: var(--bg); font-size: 14px; }
+.inp.ceen.miss { border-style: dashed; border-color: var(--ink); }
+.inp.off { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.ce-tl { justify-content: space-between; flex-wrap: nowrap; }
+.ce-ed { padding-bottom: 40px; }
+.ce-bar { position: sticky; top: 0; z-index: 5; }
+@media (max-width: 900px) {
+  .ce-line { grid-template-columns: 1fr 1fr; }
+  .ce-line > :first-child { grid-column: 1 / -1; }
+  .ce-lab { display: block; }
+  .ce-line .r { text-align: left; }
+  .ce-fee { flex-direction: row !important; justify-content: flex-start; gap: 8px; }
+  .ce-svc { flex-wrap: wrap !important; }
+  .ce-bar { position: static; }
+}
 .choice { all: unset; display: flex; gap: 14px; align-items: flex-start; padding: 16px; border: 1px solid var(--field); border-radius: 12px; cursor: pointer; }
 .choice:hover { border-color: var(--ink); }
 .choice:focus-visible { outline: 2px solid var(--ink); }
@@ -290,8 +311,8 @@ var BUYER_TIN = '02764318';
 var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
-var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news'];
-var APP_VERSION = '0.3.0';
+var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
+var APP_VERSION = '0.4.0';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -928,6 +949,12 @@ var HELP = [
   { id: 'accounts', title: 'Bank accounts', text: [
     'Montenegrin accounts have a 3-digit bank code, the account number and 2 last digits, for example 565-40-27. Type the short form; DAA Pay fills in the zeros (565-0000000000040-27) and shows the bank name.',
     'Accounts printed on the invoice are read automatically. You can correct them in the upload form, in the request preview or under Beneficiaries.'] },
+  { id: 'estimates', title: 'Cost estimates (predračuni)', text: [
+    'Cost estimates → New cost estimate. Choose the client and project, enter the project number (for example 196) and a title. The number is made for you: 196-01/26, then 196-02/26 for the next estimate in the same project.',
+    'Add sections (for example “Usluge AV produkcije”) and fill them with Add from price list. Name, unit and price come from the price list; you can change them in the estimate. A changed price shows the price-list price under the line. Custom line adds anything that is not in the price list.',
+    'Pick the agency fee (10, 7, 5 or 3%). It is set to the client’s usual fee and can be saved as their usual fee. Lines without a tick in Fee are left out of it. The NET total follows; tap + PDV 21% to add VAT, or leave it off.',
+    'Tick Also make an English version to get English fields; price-list services already have English names. PDF and Excel come in Montenegrin and, when switched on, in English. The Excel has working formulas.',
+    'Price list: everyone can add services and change names and prices. A new price applies to new lines only; estimates already made keep theirs.'] },
   { id: 'finding', title: 'Finding and exporting', text: [
     'Filter the queue by payment type, status, client, project and dates. Tap a column name (or use Sort on a phone) to sort.',
     'Select several items to approve, send to payment, mark paid, remove or download them together. Download as PDF makes one file with a cover page per item followed by its documents.'] },
@@ -962,9 +989,9 @@ function HelpCenter() {
 }
 
 // ================= REPORT A BUG =================
-var BUG_AREAS = ['Queue and filters', 'Adding invoices', 'Refund or contract form', 'Request preview', 'Approvals and payment', 'Beneficiaries', 'Users & roles', 'Sign-in and account', 'Emails', 'PDF download', 'Other'];
+var BUG_AREAS = ['Cost estimates', 'Queue and filters', 'Adding invoices', 'Refund or contract form', 'Request preview', 'Approvals and payment', 'Beneficiaries', 'Users & roles', 'Sign-in and account', 'Emails', 'PDF download', 'Other'];
 function ReportBug() {
-  var s = useState({ area: G.ui.tab === 'users' ? 'Users & roles' : G.ui.tab === 'bens' ? 'Beneficiaries' : G.ui.open ? 'Request preview' : 'Queue and filters', severity: 'annoying', what: '', expected: '', steps: '', file: null, err: '', busy: false, sent: false }), f = s[0], set = s[1];
+  var s = useState({ area: G.ui.tab === 'ce' ? 'Cost estimates' : G.ui.tab === 'users' ? 'Users & roles' : G.ui.tab === 'bens' ? 'Beneficiaries' : G.ui.open ? 'Request preview' : 'Queue and filters', severity: 'annoying', what: '', expected: '', steps: '', file: null, err: '', busy: false, sent: false }), f = s[0], set = s[1];
   var close = function () { setUi({ bug: false }); };
   async function send(e) {
     e.preventDefault();
@@ -1139,6 +1166,7 @@ function Header() {
     <nav class="tabs" aria-label="Sections">
       <button class=${'tab' + (G.ui.tab === 'queue' ? ' on' : '')} aria-current=${G.ui.tab === 'queue' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'queue' }); }}>Queue</button>
       <button class=${'tab' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null }); }}>Beneficiaries</button>
+      <button class=${'tab' + (G.ui.tab === 'ce' ? ' on' : '')} aria-current=${G.ui.tab === 'ce' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'ce', open: null, ce: null }); }}>Cost estimates</button>
       ${usersAllowed && html`<button class=${'tab' + (G.ui.tab === 'users' ? ' on' : '')} aria-current=${G.ui.tab === 'users' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'users', open: null }); }}>Users & roles${regsN ? html`<span class="pill">${regsN}</span>` : ''}</button>`}
     </nav>
     <button class="btn addbtn" aria-label="Add to payment queue" onClick=${function () { setUi({ modal: 'choose', bell: false, menu: false }); }}>${I.plus}<span class="lbl">Add to payment queue</span></button>
@@ -1169,6 +1197,7 @@ function Header() {
       <div class="stack" style="gap: 4px">
         <button class=${'navitem' + (G.ui.tab === 'queue' ? ' on' : '')} aria-current=${G.ui.tab === 'queue' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'queue', nav: false }); }}>Queue</button>
         <button class=${'navitem' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null, nav: false }); }}>Beneficiaries</button>
+        <button class=${'navitem' + (G.ui.tab === 'ce' ? ' on' : '')} aria-current=${G.ui.tab === 'ce' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'ce', open: null, ce: null, nav: false }); }}>Cost estimates</button>
         ${usersAllowed && html`<button class=${'navitem' + (G.ui.tab === 'users' ? ' on' : '')} aria-current=${G.ui.tab === 'users' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'users', open: null, nav: false }); }}>Users & roles${regsN ? html`<span class="pill" style="margin-left: auto">${regsN}</span>` : ''}</button>`}
       </div>
       <div class="stack" style="gap: 4px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line-2)">
@@ -2250,10 +2279,599 @@ function App() {
   else if (!G.me && G.setup) body = html`<${FirstRun} />`;
   else if (!G.me) body = authView === 'login' ? html`<${Login} onRegister=${function () { setAuth('register'); }} />` : html`<${Register} onLogin=${function () { setAuth('login'); }} />`;
   else if (!G.dataReady) body = html`<main class="auth gut"><div class="muted">Loading your payment queue…</div></main>`;
-  else body = html`<${Header} />${G.ui.tab === 'users' && (isTop(G.me.role) || G.me.role === 'am') ? html`<${Users} />` : G.ui.tab === 'bens' ? html`<${Beneficiaries} />` : html`<${Queue} />`}
+  else body = html`<${Header} />${G.ui.tab === 'users' && (isTop(G.me.role) || G.me.role === 'am') ? html`<${Users} />` : G.ui.tab === 'bens' ? html`<${Beneficiaries} />` : G.ui.tab === 'ce' ? html`<${Estimates} />` : html`<${Queue} />`}
     ${G.ui.open && html`<${Drawer} key=${G.ui.open} />`}${G.ui.modal && html`<${AddModal} key=${G.ui.modal} />`}${G.ui.profile && html`<${Profile} />`}`;
   return html`${G.err && html`<div class="alert e gut" role="alert" style="border-radius: 0">${G.err}</div>`}${body}${G.ui.privacy && html`<${Privacy} />`}${G.ui.help && html`<${HelpCenter} />`}${G.ui.install && html`<${InstallApp} />`}${G.ui.bug && html`<${ReportBug} />`}${G.ui.toast && html`<div class=${'toast' + (G.ui.toast.bad ? ' e' : '')} role="status">${G.ui.toast.text}</div>`}`;
 }
+// ================= COST ESTIMATES (predračuni) =================
+// Price list: col 'svc' (services) and 'svccats' (categories). Estimates: col 'ces'.
+var CE_UNITS = [
+  ['kom', 'kom', 'kom', 'kom', 'pc', 'pcs'], ['set', 'set', 'seta', 'setova', 'set', 'sets'], ['dan', 'dan', 'dana', 'dana', 'day', 'days'],
+  ['sdan', 'snimajući dan', 'snimajuća dana', 'snimajućih dana', 'shooting day', 'shooting days'], ['sat', 'sat', 'sata', 'sati', 'hour', 'hours'],
+  ['smjena', 'smjena', 'smjene', 'smjena', 'shift', 'shifts'], ['osoba', 'osoba', 'osobe', 'osoba', 'person', 'people'],
+  ['video', 'video', 'videa', 'videa', 'video', 'videos'], ['format', 'format', 'formata', 'formata', 'format', 'formats'],
+  ['reel', 'reel', 'reela', 'reelova', 'reel', 'reels'], ['spot', 'spot', 'spota', 'spotova', 'spot', 'spots'],
+  ['sek', 'sekunda', 'sekunde', 'sekundi', 'second', 'seconds'], ['aranzman', 'aranžman', 'aranžmana', 'aranžmana', 'arrangement', 'arrangements'],
+  ['angazman', 'angažman', 'angažmana', 'angažmana', 'engagement', 'engagements'], ['influenser', 'influenser', 'influensera', 'influensera', 'influencer', 'influencers'],
+  ['m2', 'm²', 'm²', 'm²', 'm²', 'm²'], ['km', 'km', 'km', 'km', 'km', 'km'], ['emit', 'emitovanje', 'emitovanja', 'emitovanja', 'broadcast', 'broadcasts'],
+  ['rot', 'rotacija', 'rotacije', 'rotacija', 'rotation', 'rotations'], ['cpm', 'CPM', 'CPM', 'CPM', 'CPM', 'CPM'],
+  ['mjesec', 'mjesec', 'mjeseca', 'mjeseci', 'month', 'months'], ['pausal', 'paušal', 'paušala', 'paušala', 'lump sum', 'lump sums']
+];
+var CE_FEES = [0, 3, 5, 7, 10], CE_VAT = 21;
+var CE_STATUS = { draft: 'Draft', sent: 'Sent to client', approved: 'Approved by client', rejected: 'Rejected' };
+var CE_NOTES = [
+  { id: 'tax', me: 'U cijenu su uračunati troškovi poreza na dohodak fizičkog lica.', en: 'Prices include personal income tax for the individuals engaged.' },
+  { id: 'media', me: 'Detaljan media plan biće dostavljen nakon usvajanja okvirnog budžeta za medijski zakup.', en: 'A detailed media plan will be provided once the media budget is approved.' },
+  { id: 'pay', me: 'Uslovi plaćanja: 50% nakon odobrenja ponude, 50% po završetku projekta.', en: 'Payment terms: 50% upon approval of the estimate, 50% upon completion of the project.' },
+  { id: 'valid', me: 'Ponuda važi 30 dana od datuma izdavanja.', en: 'This estimate is valid for 30 days from the date of issue.' },
+  { id: 'eur', me: 'Sve cijene su iskazane u EUR.', en: 'All prices are in EUR.' }
+];
+var CE_L = {
+  me: { qty: 'Količina', unit: 'Jedinica', price: 'Cijena', total: 'Ukupno', projNo: 'Broj projekta', projName: 'Naziv projekta', contact: 'Kontakt osoba', pm: 'Projekt menadžer', date: 'Datum',
+    sub: 'Međuzbir', fee: 'Agencijska provizija', net: 'UKUPNO (NETO)', vat: 'PDV', grand: 'UKUPNO SA PDV-om', noVat: 'PDV nije uračunat.', notes: 'Napomene', of: 'od', page: 'Strana' },
+  en: { qty: 'Quantity', unit: 'Unit', price: 'Unit price', total: 'Total', projNo: 'Project number', projName: 'Project name', contact: 'Contact person', pm: 'Project manager', date: 'Date',
+    sub: 'Subtotal', fee: 'Agency fee', net: 'TOTAL (NET)', vat: 'VAT', grand: 'TOTAL INCL. VAT', noVat: 'VAT not included.', notes: 'Notes', of: 'of', page: 'Page' }
+};
+var CE_SEED_CATS = [['cr', 'Kreativne usluge', 'Creative services'], ['avp', 'Usluge AV produkcije', 'AV production services'], ['avpp', 'Usluge AV postprodukcije', 'AV postproduction services'], ['btl', 'BTL / event usluge', 'BTL / event services'], ['oth', 'Ostalo', 'Other']];
+// code, category, name (MNE), name (ENG), unit, price, agency fee applies
+var CE_SEED = [
+  ['KR-01', 'cr', 'Kreativno rješenje kampanje sa glavnim vizualom, serijom vizuala i message box-om (slogani, podslogani)', 'Campaign creative concept with key visual, visual series and message box (slogans, sub-slogans)', 'kom', 1200, 1],
+  ['KR-02', 'cr', 'Adaptacija glavnog vizuala za kanale komunikacije (posteri, brošure, baneri, BB, oglasi)', 'Key visual adaptation for communication channels (posters, brochures, banners, billboards, ads)', 'set', 350, 1],
+  ['KR-03', 'cr', 'Direkcija realizacije koncepta', 'Concept execution direction', 'sdan', 82, 1],
+  ['AG-01', 'cr', 'Agencijske usluge tokom kampanje (kreiranje materijala, održavanje kanala, koordinacija s medijima, izvještavanje)', 'Agency services during the campaign (content creation, channel management, media coordination, reporting)', 'mjesec', 3950, 0],
+  ['VS-01', 'avp', 'Kamera A-roll sa direktorom fotografije', 'A-roll camera with director of photography', 'sdan', 500, 1],
+  ['VS-02', 'avp', 'Direktor kamere 4K sa osnovnom rasvjetom i tonom', '4K camera operator with basic lighting and sound', 'sdan', 350, 1],
+  ['VS-03', 'avp', 'Rasvjeta', 'Lighting', 'sdan', 480, 1],
+  ['VS-04', 'avp', 'Asistent na setu', 'Set assistant', 'sdan', 150, 1],
+  ['FO-01', 'avp', 'Fotografija na setu', 'On-set photography', 'dan', 450, 1],
+  ['FO-02', 'avp', 'Studijsko fotografisanje proizvoda (tehnička, aranžman, grupne) sa nabavkom rekvizita', 'Studio product photography (technical, styled, group) incl. props', 'dan', 800, 1],
+  ['AU-01', 'avp', 'Snimanje VO do 20 s (naracija + studio)', 'Voice-over recording up to 20 s (narration + studio)', 'spot', 350, 1],
+  ['AU-02', 'avp', 'Produkcija radijskog spota sa naracijom', 'Radio spot production with narration', 'spot', 350, 1],
+  ['AU-03', 'avp', 'Muzička adaptacija postojeće pjesme', 'Music adaptation of an existing song', 'aranzman', 600, 1],
+  ['TA-01', 'avp', 'Casting', 'Casting', 'angazman', 500, 1],
+  ['TA-02', 'avp', 'Model – honorar', 'Model fee', 'osoba', 172.5, 1],
+  ['TA-03', 'avp', 'Statista – honorar', 'Extra fee', 'osoba', 350, 1],
+  ['TA-04', 'avp', 'Šminker', 'Make-up artist', 'sdan', 150, 1],
+  ['TA-05', 'avp', 'Kostim i nabavka', 'Wardrobe and procurement', 'osoba', 100, 1],
+  ['PP-01', 'avpp', 'Montaža sa postprodukcijom – master video', 'Editing and post-production – master video', 'video', 350, 1],
+  ['PP-02', 'avpp', 'Montaža master videa sa 3D modelovanjem', 'Master video editing with 3D modelling', 'video', 2500, 1],
+  ['PP-03', 'avpp', 'Adaptacija videa na format (16:9, 9:16, različite dužine), Full HD', 'Video adaptation per format (16:9, 9:16, cut-downs), Full HD', 'format', 80, 1],
+  ['PP-04', 'avpp', 'Montaža za različite platforme (YouTube, TV, reel)', 'Editing for platforms (YouTube, TV, reel)', 'format', 180, 1],
+  ['PP-05', 'avpp', 'Reel do 180 s sa grafikom i animacijom', 'Reel up to 180 s with graphics and animation', 'reel', 220, 1],
+  ['PP-06', 'avpp', 'Reel do 180 s – highlights', 'Highlights reel up to 180 s', 'reel', 195, 1],
+  ['PP-07', 'avpp', 'Animacija (npr. CTA), po sekundi', 'Animation (e.g. CTA), per second', 'sek', 55, 1],
+  ['ST-01', 'btl', 'Vobleri 10 + 1 cm, kolor, providne trakice', 'Shelf wobblers 10 + 1 cm, colour, clear strips', 'kom', 0.12, 1],
+  ['ST-02', 'btl', 'Poster A3, 150 g, 4/0, sa rezanjem', 'A3 poster, 150 g, 4/0, trimmed', 'kom', 0.55, 1],
+  ['ST-03', 'btl', 'Poster 70 × 100 cm', 'Poster 70 × 100 cm', 'kom', 1, 1],
+  ['ST-04', 'btl', 'Leaflet A4, trifold', 'A4 trifold leaflet', 'kom', 0.1, 1],
+  ['ST-05', 'btl', 'Štampa backdrop-a sa montažom na postojećoj konstrukciji', 'Backdrop print with mounting on existing structure', 'm2', 22, 1],
+  ['ST-06', 'btl', 'Kutija 40 × 40 cm, petoslojni kaširani karton', 'Box 40 × 40 cm, five-layer laminated cardboard', 'kom', 35, 1],
+  ['ST-07', 'btl', 'Brendiranje i print na kutiji (PVC mat)', 'Box branding and print (matte PVC)', 'kom', 19, 1],
+  ['ST-08', 'btl', 'Postament za kutiju 40 × 40 × 70 – izrada i brendiranje', 'Box stand 40 × 40 × 70 – production and branding', 'kom', 30, 1],
+  ['ST-09', 'btl', 'OOH štampa (bilbord / citylight), po izmjeni', 'OOH print (billboard / citylight), per change', 'kom', 48, 1],
+  ['PR-01', 'btl', 'Promo tim – akter po smjeni', 'Promo staff – per person per shift', 'smjena', 69, 1],
+  ['PR-02', 'btl', 'Promo kit (štand, roll-up)', 'Promo kit (stand, roll-up)', 'set', 155, 1],
+  ['PR-03', 'btl', 'Promo majica', 'Promo T-shirt', 'kom', 12, 1],
+  ['PR-04', 'btl', 'Kačket sa brendiranjem', 'Branded cap', 'kom', 6, 1],
+  ['PR-05', 'btl', 'Bedž', 'Badge', 'kom', 2, 1],
+  ['PR-06', 'btl', 'Hemijska olovka', 'Ballpoint pen', 'kom', 2, 1],
+  ['PR-07', 'btl', 'Promo set (eko ceger, bedž, stikeri)', 'Promo set (eco tote bag, badge, stickers)', 'set', 6.5, 1],
+  ['LO-01', 'btl', 'Kurirska usluga – kombi (postavka i povrat)', 'Courier – van (set-up and return)', 'dan', 480, 1],
+  ['LO-02', 'btl', 'Kurirska usluga – automobil (preuzimanje)', 'Courier – car (collection)', 'dan', 290, 1],
+  ['LO-03', 'btl', 'Transport (promoteri i materijal)', 'Transport (staff and materials)', 'km', 0.35, 1],
+  ['LO-04', 'btl', 'Distribucija štampanog materijala – sve regije', 'Distribution of printed materials – all regions', 'dan', 350, 1],
+  ['IN-01', 'oth', 'Angažman influensera sa skriptom (za trajanje kampanje)', 'Influencer engagement with script (for the campaign period)', 'influenser', 980, 1],
+  ['MZ-01', 'oth', 'Zakup TV prostora – nacionalne televizije, TVC 25"', 'TV airtime – national channels, 25" TVC', 'emit', 39, 1],
+  ['MZ-02', 'oth', 'Zakup TV prostora – regionalne televizije, TVC 25"', 'TV airtime – regional channels, 25" TVC', 'emit', 11, 1],
+  ['MZ-03', 'oth', 'Zakup radijskog prostora, RC 25"', 'Radio airtime, 25" spot', 'emit', 3, 1],
+  ['MZ-04', 'oth', 'Zakup OOH – bilbord 4 × 3 / 6 × 3 (površina × mjesec)', 'OOH – billboard 4 × 3 / 6 × 3 (site × month)', 'rot', 490, 1],
+  ['MZ-05', 'oth', 'Zakup OOH – citylight (površina × mjesec)', 'OOH – citylight (site × month)', 'rot', 175, 1],
+  ['MZ-06', 'oth', 'LED display – nacionalno (do 15 dana)', 'LED display – national (up to 15 days)', 'rot', 980, 1],
+  ['MZ-07', 'oth', 'Baneri na web portalima', 'Banners on news portals', 'cpm', 3.1, 1],
+  ['MZ-08', 'oth', 'Digitalni kanali (META, YouTube, Viber, Google Display) – budžet', 'Digital channels (META, YouTube, Viber, Google Display) – budget', 'mjesec', 4800, 1]
+];
+
+function ceUnit(id) { for (var i = 0; i < CE_UNITS.length; i++) if (CE_UNITS[i][0] === id) return CE_UNITS[i]; return null; }
+function ceUnitText(id, n, lang) {
+  var u = ceUnit(id); if (!u) return id || '';
+  if (lang === 'en') return Math.abs(n) === 1 ? u[4] : u[5];
+  var whole = Math.round(n) === n, a = Math.abs(n) % 10, b = Math.abs(n) % 100;
+  if (!whole) return u[2];
+  if (a === 1 && b !== 11) return u[1];
+  if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return u[2];
+  return u[3];
+}
+function r2(n) { return Math.round((Number(n) || 0) * 100 + Number.EPSILON * 100) / 100; }
+function numIn(n) { return n == null || n === '' || isNaN(n) ? '' : String(n).replace('.', ','); }
+function ceQty(n) { return Math.round(n) === n ? String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.') : String(n).replace('.', ','); }
+function ceMoney(n) { return fmt(n) + ' €'; }
+function ceTotals(ce) {
+  var sub = 0, base = 0, secs = (ce.sections || []).map(function (s) {
+    var t = 0; (s.lines || []).forEach(function (l) { var v = r2((Number(l.qty) || 0) * (Number(l.price) || 0)); t += v; if (l.fee !== false) base += v; });
+    t = r2(t); sub += t; return t;
+  });
+  sub = r2(sub); base = r2(base);
+  var fee = r2(base * (Number(ce.fee) || 0) / 100), net = r2(sub + fee), vat = ce.vat ? r2(net * CE_VAT / 100) : 0;
+  return { secs: secs, sub: sub, feeBase: base, fee: fee, net: net, vat: vat, grand: r2(net + vat) };
+}
+function ceNumber(ce) { return (ce.projNo || '?') + '-' + pad(ce.seq || 1, 2) + '/' + (ce.year || String(new Date().getFullYear()).slice(2)); }
+function ceNextSeq(projNo, year, exceptId) {
+  var m = 0; G.data.ces.forEach(function (c) { if (c.id !== exceptId && String(c.projNo) === String(projNo) && c.year === year) m = Math.max(m, c.seq || 0); });
+  return m + 1;
+}
+function ceTxt(o, k, lang) { return lang === 'en' ? (o[k + 'En'] || o[k] || '') : (o[k] || ''); }
+function ceCats() { return G.data.svccats.slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); }); }
+function ceNoteText(n, lang) { if (n.std) { var s = CE_NOTES.filter(function (x) { return x.id === n.std; })[0]; return s ? s[lang === 'en' ? 'en' : 'me'] : ''; } return lang === 'en' ? (n.en || n.me || '') : (n.me || ''); }
+async function ceSeedPriceList() {
+  var t = stamp();
+  for (var i = 0; i < CE_SEED_CATS.length; i++) { var c = CE_SEED_CATS[i]; await put('svccats', 'cat_' + c[0], { name: c[1], nameEn: c[2], order: i + 1 }); }
+  for (var j = 0; j < CE_SEED.length; j++) { var s = CE_SEED[j]; await put('svc', 'svc_' + s[0].replace('-', ''), { code: s[0], cat: 'cat_' + s[1], name: s[2], nameEn: s[3], unit: s[4], price: s[5], fee: !!s[6], active: true, updatedBy: G.me.id, updatedAt: t }); }
+  logEv('data', 'Loaded the standard price list (' + CE_SEED.length + ' services)');
+}
+function ceBlank() {
+  var y = String(new Date().getFullYear()).slice(2);
+  return { projNo: '', seq: 1, year: y, clientId: '', projectId: '', title: '', titleEn: '', projectName: '', projectNameEn: '', contact: '', pmId: G.me.id, date: todayIso(),
+    en: false, fee: 10, vat: true, status: 'draft', sections: [{ id: uid('s'), title: '', titleEn: '', lines: [] }], notes: [{ std: 'eur' }, { std: 'valid' }] };
+}
+
+// ---------- PDF in the DAA layout
+async function ceMakePdf(ce, lang) {
+  var PL = window.PDFLib, L = CE_L[lang];
+  if (!PL || !window.fontkit) throw new Error('the PDF tools did not load; reload the page');
+  var doc = await PL.PDFDocument.create(); doc.registerFontkit(window.fontkit);
+  var reg = await doc.embedFont(await getBytes(ASSET.fontR), { subset: true }), bold = await doc.embedFont(await getBytes(ASSET.fontB), { subset: true });
+  var logo = await doc.embedPng(await getBytes(ASSET.logo));
+  var W = 595.28, H = 841.89, M = 44, ink = PL.rgb(0.067, 0.067, 0.067), grey = PL.rgb(0.36, 0.36, 0.36), line = PL.rgb(0.82, 0.82, 0.8), band = PL.rgb(0.937, 0.937, 0.937);
+  var cQ = 330, cU = 385, cP = 470, cT = W - M, nameW = cQ - M - 34;
+  var tot = ceTotals(ce), page, y, pageNo = 0;
+  var wrap = function (text, font, size, width) {
+    var out = []; String(text || '').split('\n').forEach(function (para) { var cur = ''; para.split(' ').forEach(function (w) { var t = cur ? cur + ' ' + w : w; if (font.widthOfTextAtSize(t, size) > width && cur) { out.push(cur); cur = w; } else cur = t; }); out.push(cur); }); return out;
+  };
+  var right = function (pg, text, x, yy, size, font) { pg.drawText(text, { x: x - font.widthOfTextAtSize(text, size), y: yy, size: size, font: font, color: ink }); };
+  var center = function (pg, text, x, yy, size, font) { pg.drawText(text, { x: x - font.widthOfTextAtSize(text, size) / 2, y: yy, size: size, font: font, color: ink }); };
+  var tableHead = function () {
+    center(page, L.qty, cQ, y, 8, bold); center(page, L.unit, cU, y, 8, bold); right(page, L.price, cP + 18, y, 8, bold); right(page, L.total, cT, y, 8, bold);
+    page.drawLine({ start: { x: M, y: y - 6 }, end: { x: W - M, y: y - 6 }, thickness: 0.8, color: ink }); y -= 22;
+  };
+  var newPage = function (first) {
+    page = doc.addPage([W, H]); pageNo++;
+    page.drawText('DAA Montenegro d.o.o. · ' + ceNumber(ce) + ' · ' + L.page + ' ' + pageNo, { x: M, y: 24, size: 7.5, font: reg, color: grey });
+    if (first) return;
+    y = H - M - 10; tableHead();
+  };
+  var need = function (h) { if (y - h < 60) newPage(false); };
+  newPage(true);
+  page.drawImage(logo, { x: M, y: H - M - 72, width: 55, height: 72 });
+  var client = clientName(ce.clientId), cl = wrap(client, bold, 16, 300);
+  cl.forEach(function (t, i) { right(page, t, W - M, H - M - 40 - i * 19, 16, bold); });
+  y = H - M - 110;
+  wrap(ceTxt(ce, 'title', lang), bold, 14, W - 2 * M).forEach(function (t) { page.drawText(t, { x: M, y: y, size: 14, font: bold, color: ink }); y -= 19; });
+  y -= 6;
+  var info = [[L.projNo, ceNumber(ce) + ' ' + L.of + ' ' + isoToDate(ce.date) + '.'], [L.projName, ceTxt(ce, 'projectName', lang) || projectName(ce.projectId)], null,
+    [L.contact, ce.contact], [L.pm, userName(ce.pmId)], [L.date, isoToDate(ce.date) + '.']];
+  info.forEach(function (r) { if (!r) { y -= 8; return; } if (!r[1]) return; page.drawText(r[0] + ': ' + r[1], { x: M, y: y, size: 8.5, font: bold, color: ink }); y -= 12; });
+  y -= 18; tableHead();
+  (ce.sections || []).forEach(function (s, si) {
+    var st = (si + 1) + '. ' + (ceTxt(s, 'title', lang) || '—'); need(40);
+    page.drawRectangle({ x: M, y: y - 6, width: W - 2 * M, height: 20, color: band });
+    page.drawText(st, { x: M + 6, y: y, size: 10, font: bold, color: ink }); right(page, ceMoney(tot.secs[si]), cT - 6, y, 10, bold); y -= 26;
+    (s.lines || []).forEach(function (l) {
+      var nm = ceTxt(l, 'name', lang) + (l.calc ? '\n' + l.calc : ''), ls = wrap(nm, reg, 9.5, nameW), h = ls.length * 12 + 10;
+      need(h);
+      ls.forEach(function (t, i) { page.drawText(t, { x: M, y: y - i * 12, size: 9.5, font: reg, color: i > 0 && l.calc && i >= ls.length - wrap(l.calc, reg, 9.5, nameW).length ? grey : ink }); });
+      center(page, ceQty(Number(l.qty) || 0), cQ, y, 9, reg); center(page, ceUnitText(l.unit, Number(l.qty) || 0, lang), cU, y, 9, reg);
+      right(page, ceMoney(l.price), cP + 18, y, 9, reg); right(page, ceMoney(r2((Number(l.qty) || 0) * (Number(l.price) || 0))), cT, y, 9, reg);
+      y -= h;
+    });
+    y -= 4;
+  });
+  need(110); y -= 6;
+  var tl = function (label, val, strong) { page.drawText(label, { x: cQ - 30, y: y, size: strong ? 10 : 9, font: strong ? bold : reg, color: ink }); right(page, val, cT, y, strong ? 11 : 9, strong ? bold : reg); y -= strong ? 18 : 14; };
+  page.drawLine({ start: { x: cQ - 30, y: y + 14 }, end: { x: W - M, y: y + 14 }, thickness: 0.5, color: line });
+  tl(L.sub, ceMoney(tot.sub));
+  if (Number(ce.fee)) tl(L.fee + ' ' + ce.fee + '%', ceMoney(tot.fee));
+  page.drawLine({ start: { x: cQ - 30, y: y + 10 }, end: { x: W - M, y: y + 10 }, thickness: 0.8, color: ink });
+  tl(L.net, ceMoney(tot.net), true);
+  if (ce.vat) { tl(L.vat + ' ' + CE_VAT + '%', ceMoney(tot.vat)); tl(L.grand, ceMoney(tot.grand), true); }
+  else { page.drawText(L.noVat, { x: cQ - 30, y: y, size: 8.5, font: reg, color: grey }); y -= 14; }
+  var notes = (ce.notes || []).map(function (n) { return ceNoteText(n, lang); }).filter(Boolean);
+  if (notes.length) {
+    y -= 14; need(30); page.drawText(L.notes + ':', { x: M, y: y, size: 9, font: bold, color: ink }); y -= 14;
+    notes.forEach(function (n) { wrap(n, reg, 8.5, W - 2 * M).forEach(function (t) { need(12); page.drawText(t, { x: M, y: y, size: 8.5, font: reg, color: ink }); y -= 11.5; }); y -= 2; });
+  }
+  return doc.save();
+}
+
+// ---------- Excel in the same layout as today's sheets (with live formulas)
+var CRC_T = (function () { var t = []; for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { var c = 0xFFFFFFFF; for (var i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files) {   // files: [{ name, data: Uint8Array }] → zip without compression
+  var enc = new TextEncoder(), parts = [], central = [], off = 0;
+  files.forEach(function (f) {
+    var nm = enc.encode(f.name), d = f.data, crc = crc32(d), h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(8, 0, true); h.setUint32(14, crc, true); h.setUint32(18, d.length, true); h.setUint32(22, d.length, true); h.setUint16(26, nm.length, true);
+    parts.push(new Uint8Array(h.buffer), nm, d);
+    var c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint32(16, crc, true); c.setUint32(20, d.length, true); c.setUint32(24, d.length, true); c.setUint16(28, nm.length, true); c.setUint32(42, off, true);
+    central.push(new Uint8Array(c.buffer), nm);
+    off += 30 + nm.length + d.length;
+  });
+  var csize = central.reduce(function (n, p) { return n + p.length; }, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, csize, true); e.setUint32(16, off, true);
+  return new Blob(parts.concat(central, [new Uint8Array(e.buffer)]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+async function ceMakeXlsx(ce, lang) {
+  var L = CE_L[lang], tot = ceTotals(ce), esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+  var rows = [], r = 0, merges = [], heights = {};
+  var S = { base: 0, title: 1, info: 2, head: 3, sec: 4, secT: 5, txt: 6, qty: 7, unit: 8, eur: 9, lab: 10, labB: 11, eurB: 12, client: 13, note: 14 };
+  var cell = function (ref, v, s, f) {
+    if (f) return '<c r="' + ref + '" s="' + s + '"><f>' + esc(f) + '</f>' + (v != null ? '<v>' + v + '</v>' : '') + '</c>';
+    if (typeof v === 'number') return '<c r="' + ref + '" s="' + s + '"><v>' + v + '</v></c>';
+    return '<c r="' + ref + '" s="' + s + '" t="inlineStr"><is><t xml:space="preserve">' + esc(v) + '</t></is></c>';
+  };
+  var add = function (cells, h) { r++; if (h) heights[r] = h; rows.push('<row r="' + r + '"' + (h ? ' ht="' + h + '" customHeight="1"' : '') + '>' + cells.map(function (c) { return c(r); }).join('') + '</row>'); return r; };
+  var C = function (col, v, s, f) { return function (rr) { return cell(col + rr, v, s, typeof f === 'function' ? f(rr) : f); }; };
+  add([C('B', clientName(ce.clientId), S.client)], 60); merges.push('B1:E1');
+  add([C('A', ceTxt(ce, 'title', lang), S.title)], 22);
+  add([]);
+  add([C('A', L.projNo + ': ' + ceNumber(ce) + ' ' + L.of + ' ' + isoToDate(ce.date) + '.', S.info)]);
+  add([C('A', L.projName + ': ' + (ceTxt(ce, 'projectName', lang) || projectName(ce.projectId)), S.info)]);
+  add([]);
+  if (ce.contact) add([C('A', L.contact + ': ' + ce.contact, S.info)]);
+  add([C('A', L.pm + ': ' + userName(ce.pmId), S.info)]);
+  add([C('A', L.date + ': ' + isoToDate(ce.date) + '.', S.info)]);
+  add([]);
+  add([C('B', L.qty, S.head), C('C', L.unit, S.head), C('D', L.price, S.head), C('E', L.total, S.head)], 18);
+  add([]);
+  var secRows = [], feeRefs = [], allFee = true;
+  (ce.sections || []).forEach(function (s, si) {
+    var sr = r + 1, first = sr + 1, last = sr + (s.lines || []).length;
+    add([C('A', (si + 1) + '. ' + (ceTxt(s, 'title', lang) || ''), S.sec), C('B', '', S.sec), C('C', '', S.sec), C('D', '', S.sec), C('E', tot.secs[si], S.secT, (s.lines || []).length ? 'SUM(E' + first + ':E' + last + ')' : '0')], 20);
+    secRows.push(sr);
+    (s.lines || []).forEach(function (l) {
+      var q = Number(l.qty) || 0, p = Number(l.price) || 0, nm = ceTxt(l, 'name', lang) + (l.calc ? '\n' + l.calc : '');
+      var lr = add([C('A', nm, S.txt), C('B', q, S.qty), C('C', ceUnitText(l.unit, q, lang), S.unit), C('D', p, S.eur), C('E', r2(q * p), S.eur, function (rr) { return 'B' + rr + '*D' + rr; })], Math.max(26, 13 * Math.ceil(nm.length / 55) + 8));
+      if (l.fee !== false) feeRefs.push('E' + lr); else allFee = false;
+    });
+    add([]);
+  });
+  var subR = add([C('B', L.sub, S.lab), C('E', tot.sub, S.eur, secRows.length ? secRows.map(function (x) { return 'E' + x; }).join('+') : '0')]);
+  var feeR = add([C('B', L.fee + ' ' + (Number(ce.fee) || 0) + '%', S.lab), C('E', tot.fee, S.eur, (allFee ? 'E' + subR : (feeRefs.length ? '(' + feeRefs.join('+') + ')' : '0')) + '*' + (Number(ce.fee) || 0) + '/100')]);
+  add([]);
+  var netR = add([C('B', L.net, S.labB), C('E', tot.net, S.eurB, 'E' + subR + '+E' + feeR)], 18);
+  if (ce.vat) { var vr = add([C('B', L.vat + ' ' + CE_VAT + '%', S.lab), C('E', tot.vat, S.eur, 'E' + netR + '*' + CE_VAT + '/100')]); add([C('B', L.grand, S.labB), C('E', tot.grand, S.eurB, 'E' + netR + '+E' + vr)], 18); }
+  else add([C('B', L.noVat, S.lab)]);
+  var notes = (ce.notes || []).map(function (n) { return ceNoteText(n, lang); }).filter(Boolean);
+  if (notes.length) { add([]); add([C('A', L.notes + ':', S.info)]); notes.forEach(function (n) { var nr = add([C('A', n, S.note)], 14 * Math.ceil(n.length / 110) + 4); merges.push('A' + nr + ':E' + nr); }); }
+  var sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><sheetFormatPr defaultRowHeight="13"/>' +
+    '<cols><col min="1" max="1" width="52.3" customWidth="1"/><col min="2" max="2" width="8.5" customWidth="1"/><col min="3" max="3" width="16" customWidth="1"/><col min="4" max="4" width="11" customWidth="1"/><col min="5" max="5" width="16.9" customWidth="1"/></cols>' +
+    '<sheetData>' + rows.join('') + '</sheetData><mergeCells count="' + merges.length + '">' + merges.map(function (m) { return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>' +
+    '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/><drawing r:id="rId1"/></worksheet>';
+  var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.00\\ [$€-1]"/><numFmt numFmtId="165" formatCode="#,##0.###"/></numFmts>' +
+    '<fonts count="6"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="14"/><name val="Arial"/></font><font><b/><sz val="8"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font><font><b/><sz val="16"/><name val="Arial"/></font><font><sz val="8"/><name val="Arial"/></font></fonts>' +
+    '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEFEFEF"/></patternFill></fill></fills>' +
+    '<borders count="3"><border/><border><bottom style="medium"><color rgb="FF111111"/></bottom></border><border><top style="thin"><color rgb="FF111111"/></top></border></borders>' +
+    '<cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="15">' +
+    '<xf fontId="0"/>' +                                                                                               // base
+    '<xf fontId="1" applyFont="1"/>' +                                                                                 // title
+    '<xf fontId="2" applyFont="1"/>' +                                                                                 // info
+    '<xf fontId="3" borderId="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>' + // head
+    '<xf fontId="3" fillId="2" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>' +   // sec
+    '<xf fontId="3" fillId="2" numFmtId="164" applyFont="1" applyFill="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"/></xf>' + // secT
+    '<xf fontId="0" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf>' +                              // txt
+    '<xf fontId="0" numFmtId="165" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' + // qty
+    '<xf fontId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +                        // unit
+    '<xf fontId="0" numFmtId="164" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"/></xf>' +       // eur
+    '<xf fontId="0"/>' +                                                                                               // lab
+    '<xf fontId="3" borderId="2" applyFont="1" applyBorder="1"/>' +                                                    // labB
+    '<xf fontId="3" borderId="2" numFmtId="164" applyFont="1" applyBorder="1" applyNumberFormat="1"/>' +               // eurB
+    '<xf fontId="4" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>' + // client
+    '<xf fontId="5" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>' +                    // note
+    '</cellXfs></styleSheet>';
+  var logo = await getBytes(ASSET.logo), enc = function (s) { return new TextEncoder().encode(s); };
+  var name = (lang === 'en' ? 'Cost estimate' : 'Predracun').slice(0, 31);
+  var files = [
+    { name: '[Content_Types].xml', data: enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>') },
+    { name: '_rels/.rels', data: enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>') },
+    { name: 'xl/workbook.xml', data: enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' + esc(name) + '" sheetId="1" r:id="rId1"/></sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>') },
+    { name: 'xl/_rels/workbook.xml.rels', data: enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>') },
+    { name: 'xl/styles.xml', data: enc(styles) },
+    { name: 'xl/worksheets/sheet1.xml', data: enc(sheet) },
+    { name: 'xl/worksheets/_rels/sheet1.xml.rels', data: enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>') },
+    { name: 'xl/drawings/drawing1.xml', data: enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>76200</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>38100</xdr:rowOff></xdr:from><xdr:ext cx="548640" cy="711200"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="DAA logo"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>') },
+    { name: 'xl/drawings/_rels/drawing1.xml.rels', data: enc('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/></Relationships>') },
+    { name: 'xl/media/image1.png', data: logo }
+  ];
+  return zipStore(files);
+}
+function ceFileName(ce, lang, ext) {
+  var base = ceNumber(ce).replace(/\//g, '_') + ' - ' + (clientName(ce.clientId) || 'Client') + ' - ' + (ceTxt(ce, 'title', lang) || (lang === 'en' ? 'Cost estimate' : 'Predracun'));
+  var tr = { 'č': 'c', 'ć': 'c', 'š': 's', 'ž': 'z', 'đ': 'dj', 'Č': 'C', 'Ć': 'C', 'Š': 'S', 'Ž': 'Z', 'Đ': 'Dj', '–': '-', '—': '-', '“': '', '”': '', '„': '', '’': '' };
+  base = base.replace(/[čćšžđČĆŠŽĐ–—“”„’]/g, function (c) { return tr[c]; }).replace(/[^\x20-\x7E]/g, '');
+  return base.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) + (lang === 'en' ? ' (EN)' : '') + '.' + ext;
+}
+
+// ---------- screens
+function Estimates() {
+  var sub = G.ui.ceView || 'list';
+  if (G.ui.ce) return html`<${CeEditor} key=${G.ui.ce} />`;
+  return html`<main class="page wrap gut">
+    <section class="card pad row" style="justify-content: space-between; gap: 12px" aria-label="Cost estimates">
+      <div style="min-width: 0"><h2 style="font-size: 17px">Cost estimates</h2><div class="muted" style="font-size: 13px">Predračuni for clients, built from the DAA price list. Written in Montenegrin, with an English version when needed.</div></div>
+      <div class="row">
+        <div class="row" role="tablist">${[['list', 'Estimates'], ['prices', 'Price list']].map(function (x) { return html`<button key=${x[0]} role="tab" aria-selected=${sub === x[0]} class=${'chip' + (sub === x[0] ? ' on' : '')} onClick=${function () { setUi({ ceView: x[0] }); }}>${x[1]}</button>`; })}</div>
+        ${sub === 'list' && html`<button class="btn" onClick=${function () { setUi({ ce: 'new' }); }}>${I.plus} New cost estimate</button>`}
+      </div>
+    </section>
+    ${sub === 'prices' ? html`<${PriceList} />` : html`<${CeList} />`}
+  </main>`;
+}
+function CeList() {
+  var narrow = useNarrow(), fs = useState({ q: '', client: 'all', status: 'all' }), f = fs[0], setF = fs[1];
+  var list = G.data.ces.filter(function (c) {
+    if (f.client !== 'all' && c.clientId !== f.client) return false;
+    if (f.status !== 'all' && (c.status || 'draft') !== f.status) return false;
+    var t = f.q.trim().toLowerCase(); return !t || [ceNumber(c), c.title, clientName(c.clientId), projectName(c.projectId), c.projectName].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; });
+  }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  var clients = G.data.clients.filter(function (c) { return G.data.ces.some(function (e) { return e.clientId === c.id; }); }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+  var open = function (c) { setUi({ ce: c.id }); };
+  return html`<section class="card pad grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))" aria-label="Filters">
+      <${Field} label="Search"><input id="ce-q" class="inp" type="search" placeholder="Number, client, title" value=${f.q} onInput=${inputOn(f, setF, 'q')} /><//>
+      <${Field} label="Client"><select id="ce-fc" class="inp" value=${f.client} onChange=${inputOn(f, setF, 'client')}><option value="all">All clients</option>${clients.map(function (c) { return html`<option value=${c.id}>${c.name}</option>`; })}</select><//>
+      <${Field} label="Status"><select id="ce-fs" class="inp" value=${f.status} onChange=${inputOn(f, setF, 'status')}><option value="all">All statuses</option>${Object.keys(CE_STATUS).map(function (k) { return html`<option value=${k}>${CE_STATUS[k]}</option>`; })}</select><//>
+    </section>
+    ${!list.length ? html`<div class="card empty">${G.data.ces.length ? 'No cost estimate matches.' : 'No cost estimates yet. Start one with New cost estimate.'}</div>`
+      : narrow ? html`<section class="mlist">${list.map(function (c) { var t = ceTotals(c); return html`<article key=${c.id} class="mcard">
+          <button class="namebtn" style="all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 2px" onClick=${function () { open(c); }}><span class="mono" style="font-size: 12px">${ceNumber(c)}</span><b>${c.title || '(untitled)'}</b><span class="muted" style="font-size: 13px">${clientName(c.clientId) || '—'}</span></button>
+          <div class="mcf"><span class=${'badge ' + ceBadge(c.status)}>${CE_STATUS[c.status || 'draft']}</span><span>${isoToDate(c.date)}</span><span class="amt num">${ceMoney(t.net)}</span></div></article>`; })}</section>`
+      : html`<section class="card" style="overflow-x: auto"><table class="t"><thead><tr><th style="padding: 10px 16px">Number</th><th>Client</th><th>Title</th><th>Date</th><th>Status</th><th>By</th><th class="r">NET</th><th class="r" style="padding-right: 16px">With VAT</th></tr></thead>
+        <tbody>${list.map(function (c) { var t = ceTotals(c); return html`<tr key=${c.id} style="cursor: pointer" onClick=${function () { open(c); }}>
+          <td class="mono" style="padding-left: 16px; white-space: nowrap">${ceNumber(c)}</td><td>${clientName(c.clientId) || '—'}</td><td><button class="link" style="text-align: left" onClick=${function (e) { e.stopPropagation(); open(c); }}>${c.title || '(untitled)'}</button><div class="muted" style="font-size: 12px">${c.projectName || projectName(c.projectId)}</div></td>
+          <td class="num" style="white-space: nowrap">${isoToDate(c.date)}</td><td><span class=${'badge ' + ceBadge(c.status)}>${CE_STATUS[c.status || 'draft']}</span></td><td style="white-space: nowrap">${userName(c.by)}</td>
+          <td class="r num" style="font-weight: 600; white-space: nowrap">${ceMoney(t.net)}</td><td class="r num" style="padding-right: 16px; white-space: nowrap">${c.vat ? ceMoney(t.grand) : '—'}</td></tr>`; })}</tbody></table></section>`}`;
+}
+function ceBadge(s) { return s === 'approved' ? 's4' : s === 'rejected' ? 's5' : s === 'sent' ? 's3' : 's0'; }
+
+function CeEditor() {
+  var isNew = G.ui.ce === 'new', src = isNew ? (G.ui.ceCopy || ceBlank()) : byId(G.data.ces, G.ui.ce);
+  var ss = useState(function () { return src ? JSON.parse(JSON.stringify(src)) : null; }), ce = ss[0], setCe = ss[1];
+  var ds = useState(isNew && !!G.ui.ceCopy), dirty = ds[0], setDirty = ds[1];
+  var ps = useState(null), pick = ps[0], setPick = ps[1];       // section index for the service picker
+  var es = useState(''), err = es[0], setErr = es[1], bs = useState(false), busy = bs[0], setBusy = bs[1];
+  var ms = useState(false), mkDefault = ms[0], setMkDefault = ms[1];
+  var narrow = useNarrow();
+  useEffect(function () { try { window.scrollTo(0, 0); } catch (e) {} }, []);
+  if (!ce) return html`<main class="page wrap gut"><div class="card empty">This cost estimate no longer exists. <button class="link" onClick=${function () { setUi({ ce: null }); }}>Back to the list</button></div></main>`;
+  var tot = ceTotals(ce), client = byId(G.data.clients, ce.clientId);
+  var upd = function (p) { setCe(Object.assign({}, ce, p)); setDirty(true); setErr(''); };
+  var updSec = function (si, p) { var s = ce.sections.slice(); s[si] = Object.assign({}, s[si], p); upd({ sections: s }); };
+  var updLine = function (si, li, p) { var ls = ce.sections[si].lines.slice(); ls[li] = Object.assign({}, ls[li], p); updSec(si, { lines: ls }); };
+  var moveLine = function (si, li, d) { var ls = ce.sections[si].lines.slice(), j = li + d; if (j < 0 || j >= ls.length) return; var t = ls[li]; ls[li] = ls[j]; ls[j] = t; updSec(si, { lines: ls }); };
+  var projects = G.data.projects.filter(function (p) { return ce.clientId && p.clientId === ce.clientId; });
+  function setClient(id) {
+    var c = byId(G.data.clients, id), p = { clientId: id, projectId: '' };
+    if (c && c.fee != null) p.fee = c.fee;
+    setMkDefault(!!c && c.fee == null);
+    upd(p);
+  }
+  function setProject(id) {
+    var p = byId(G.data.projects, id), patchP = { projectId: id };
+    if (p) { if (!ce.projectName) patchP.projectName = p.name; if (p.no && !ce.projNo) { patchP.projNo = p.no; patchP.seq = ceNextSeq(p.no, ce.year, ce.id); } }
+    upd(patchP);
+  }
+  function addFromPrice(svc) {
+    var s = ce.sections[pick], lines = (s.lines || []).concat([{ id: uid('l'), svcId: svc.id, code: svc.code, name: svc.name, nameEn: svc.nameEn || '', calc: '', qty: 1, unit: svc.unit, price: svc.price, std: svc.price, fee: svc.fee !== false }]);
+    updSec(pick, { lines: lines });
+    if (/^TA-|^AU-01/.test(svc.code || '') && !(ce.notes || []).some(function (n) { return n.std === 'tax'; })) setCe(function (c) { return Object.assign({}, c, { notes: (c.notes || []).concat([{ std: 'tax' }]) }); });
+  }
+  function addCustom(si) { updSec(si, { lines: (ce.sections[si].lines || []).concat([{ id: uid('l'), svcId: '', name: '', nameEn: '', calc: '', qty: 1, unit: 'kom', price: 0, fee: true }]) }); }
+  async function save(after) {
+    if (!ce.clientId) { setErr('Choose the client.'); return false; }
+    if (!String(ce.projNo).trim()) { setErr('Add the project number (for example 196). The estimate number is made from it.'); return false; }
+    if (!ce.title.trim()) { setErr('Add a title, for example “Usluge AV produkcije – korporativni video”.'); return false; }
+    var clash = G.data.ces.filter(function (c) { return c.id !== ce.id && String(c.projNo) === String(ce.projNo) && c.year === ce.year && c.seq === ce.seq; })[0];
+    if (clash) { setErr(ceNumber(ce) + ' is already used by “' + (clash.title || '') + '”. Change the sequence number.'); return false; }
+    setBusy(true);
+    var id = ce.id || uid('ce'), data = Object.assign({}, ce); delete data.id;
+    data.sections = data.sections.map(function (s) { return Object.assign({}, s, { lines: (s.lines || []).map(function (l) { var o = Object.assign({}, l); delete o.qtyT; delete o.priceT; return o; }) }); });
+    data.updatedBy = G.me.id; data.updatedAt = stamp();
+    if (!ce.id) { data.by = G.me.id; data.ts = Date.now(); data.created = stamp(); }
+    var ok = await put('ces', id, data);
+    setBusy(false);
+    if (!ok) return false;
+    if (mkDefault && client) { patch('clients', client.id, { fee: Number(ce.fee) }); setMkDefault(false); }
+    var proj = byId(G.data.projects, ce.projectId); if (proj && !proj.no) patch('projects', proj.id, { no: String(ce.projNo).trim() });
+    logEv('data', (ce.id ? 'Updated' : 'Created') + ' cost estimate ' + ceNumber(ce) + ' – ' + ce.title);
+    setDirty(false); toast('Saved ' + ceNumber(ce) + '.');
+    if (!ce.id) { G.ui.ceCopy = null; setUi({ ce: id }); return true; }
+    if (after) after();
+    return true;
+  }
+  async function exportAs(kind, lang) {
+    if (dirty && !(await save())) return;
+    if (lang === 'en') {
+      var miss = [ce.titleEn ? '' : 'title', ce.projectNameEn || !(ce.projectName || ce.projectId) ? '' : 'project name'].concat(ce.sections.map(function (s, i) { return s.titleEn ? '' : 'section ' + (i + 1); }), [].concat.apply([], ce.sections.map(function (s) { return (s.lines || []).filter(function (l) { return !l.nameEn; }).map(function (l) { return '“' + (l.name || '').slice(0, 30) + '”'; }); }))).filter(Boolean);
+      if (miss.length && !confirm('These have no English text yet and will print in Montenegrin: ' + miss.slice(0, 6).join(', ') + (miss.length > 6 ? ' and ' + (miss.length - 6) + ' more' : '') + '. Continue?')) return;
+    }
+    setBusy(true);
+    try {
+      if (kind === 'pdf') await saveFile(ceFileName(ce, lang, 'pdf'), await ceMakePdf(ce, lang));
+      else await saveFile(ceFileName(ce, lang, 'xlsx'), await ceMakeXlsx(ce, lang));
+    } catch (e) { toast('Could not create the file: ' + (e.message || e), true); }
+    setBusy(false);
+  }
+  function duplicate() {
+    var c = JSON.parse(JSON.stringify(ce)); delete c.id; delete c.by; delete c.ts; delete c.created;
+    c.seq = ceNextSeq(c.projNo, c.year); c.status = 'draft'; c.date = todayIso(); c.title = c.title + ' (kopija)';
+    G.ui.ceCopy = c; setUi({ ce: 'new' }); toast('Copy ready as ' + ceNumber(c) + '. Save it to keep it.');
+  }
+  async function remove() { if (!confirm('Delete cost estimate ' + ceNumber(ce) + '? This cannot be undone.')) return; if (await del('ces', ce.id)) { logEv('data', 'Deleted cost estimate ' + ceNumber(ce)); setUi({ ce: null }); toast('Deleted.'); } }
+  function back() { if (dirty && !confirm('Leave without saving your changes?')) return; G.ui.ceCopy = null; setUi({ ce: null }); }
+  var en = !!ce.en, canDelete = !ce.id || ce.by === G.me.id || isTop(G.me.role);
+  var enIn = function (val, onInput, ph, id) { return en ? html`<input id=${id} class=${'inp ceen' + (val ? '' : ' miss')} lang="en" placeholder=${ph || 'English'} value=${val || ''} onInput=${onInput} />` : null; };
+
+  return html`<main class="page wrap gut ce-ed">
+    <section class="card pad row ce-bar" style="justify-content: space-between; gap: 12px">
+      <div class="row" style="gap: 10px; min-width: 0"><button class="icon" aria-label="Back to cost estimates" onClick=${back}>‹</button>
+        <div style="min-width: 0"><div class="mono" style="font-size: 13px">${ceNumber(ce)}${dirty ? html` <span class="badge s1">Not saved</span>` : ''}</div><h2 style="font-size: 18px; overflow: hidden; text-overflow: ellipsis">${ce.title || 'New cost estimate'}</h2></div></div>
+      <div class="row">
+        <button class="btn" disabled=${busy} onClick=${function () { save(); }}>${busy ? 'Working…' : 'Save'}</button>
+        <button class="btn o sm" disabled=${busy} onClick=${function () { exportAs('pdf', 'me'); }}>${I.dl} PDF</button>
+        <button class="btn o sm" disabled=${busy} onClick=${function () { exportAs('xlsx', 'me'); }}>${I.dl} Excel</button>
+        ${en && html`<button class="btn o sm" disabled=${busy} onClick=${function () { exportAs('pdf', 'en'); }}>${I.dl} PDF (EN)</button><button class="btn o sm" disabled=${busy} onClick=${function () { exportAs('xlsx', 'en'); }}>${I.dl} Excel (EN)</button>`}
+      </div>
+    </section>
+    ${err && html`<div class="alert e" role="alert">${err}</div>`}
+
+    <section class="card pad stack" aria-label="Details">
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr))">
+        <${Field} label="Client" req><select id="ce-client" class="inp" value=${ce.clientId} onChange=${function (e) { setClient(e.target.value); }}><option value="">Choose…</option>${G.data.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (c) { return html`<option value=${c.id}>${c.name}</option>`; })}</select><//>
+        <${Field} label="Project" hint=${ce.clientId ? '' : 'Choose the client first'}><select id="ce-project" class="inp" value=${ce.projectId} disabled=${!ce.clientId} onChange=${function (e) { setProject(e.target.value); }}><option value="">—</option>${projects.map(function (p) { return html`<option value=${p.id}>${p.name}</option>`; })}</select><//>
+        <${Field} label="Project number" req hint=${'Estimate number: ' + ceNumber(ce)}><div class="row" style="flex-wrap: nowrap; gap: 6px"><input id="ce-projno" class="inp mono" inputmode="numeric" style="flex: 2" value=${ce.projNo} onInput=${function (e) { var v = e.target.value.trim(); upd({ projNo: v, seq: ce.id ? ce.seq : ceNextSeq(v, ce.year, ce.id) }); }} /><span aria-hidden="true">-</span><input id="ce-seq" class="inp mono" aria-label="Estimate sequence" inputmode="numeric" style="flex: 1" value=${pad(ce.seq || 1, 2)} onInput=${function (e) { upd({ seq: parseInt(e.target.value, 10) || 1 }); }} /><span aria-hidden="true">/${ce.year}</span></div><//>
+        <${Field} label="Date"><input id="ce-date" class="inp" type="date" value=${ce.date} onInput=${function (e) { upd({ date: e.target.value }); }} /><//>
+        <${Field} label="Title" req wide><input id="ce-title" class="inp" placeholder="Usluge AV produkcije – korporativni video" value=${ce.title} onInput=${function (e) { upd({ title: e.target.value }); }} />${enIn(ce.titleEn, function (e) { upd({ titleEn: e.target.value }); }, 'Title in English', 'ce-title-en')}<//>
+        <${Field} label="Project name" wide hint="As it should appear on the estimate"><input id="ce-pname" class="inp" value=${ce.projectName} onInput=${function (e) { upd({ projectName: e.target.value }); }} />${enIn(ce.projectNameEn, function (e) { upd({ projectNameEn: e.target.value }); }, 'Project name in English', 'ce-pname-en')}<//>
+        <${Field} label="Contact person"><input id="ce-contact" class="inp" value=${ce.contact} onInput=${function (e) { upd({ contact: e.target.value }); }} /><//>
+        <${Field} label="Project manager"><select id="ce-pm" class="inp" value=${ce.pmId} onChange=${function (e) { upd({ pmId: e.target.value }); }}>${G.data.users.filter(function (u) { return u.active !== false; }).map(function (u) { return html`<option value=${u.id}>${nameOf(u)}</option>`; })}</select><//>
+        <${Field} label="Status"><select id="ce-status" class="inp" value=${ce.status || 'draft'} onChange=${function (e) { upd({ status: e.target.value }); }}>${Object.keys(CE_STATUS).map(function (k) { return html`<option value=${k}>${CE_STATUS[k]}</option>`; })}</select><//>
+        <div class="fld"><span>Language</span><label class="row" style="min-height: 44px; gap: 8px; font-weight: 400"><input type="checkbox" checked=${en} onChange=${function (e) { upd({ en: e.target.checked }); }} /> Also make an English version</label></div>
+      </div>
+      ${en && html`<div class="muted" style="font-size: 13px">English fields appear under each Montenegrin text. Services from the price list fill in their English names; empty English fields are outlined.</div>`}
+    </section>
+
+    ${ce.sections.map(function (s, si) { return html`<section key=${s.id} class="card" aria-label=${'Section ' + (si + 1)}>
+      <div class="pad row" style="gap: 8px; border-bottom: 1px solid var(--line-2); background: var(--bg); border-radius: 12px 12px 0 0; flex-wrap: nowrap">
+        <b style="flex: none">${si + 1}.</b>
+        <div class="stack" style="gap: 6px; flex: 1; min-width: 0"><input class="inp" aria-label=${'Section ' + (si + 1) + ' title'} style="font-weight: 600" placeholder="Section, e.g. Usluge AV produkcije" value=${s.title} onInput=${function (e) { updSec(si, { title: e.target.value }); }} />${enIn(s.titleEn, function (e) { updSec(si, { titleEn: e.target.value }); }, 'Section title in English')}</div>
+        <b class="num" style="flex: none; min-width: 90px; text-align: right">${ceMoney(tot.secs[si])}</b>
+        ${ce.sections.length > 1 && html`<button class="icon" aria-label=${'Remove section ' + (si + 1)} onClick=${function () { if (!s.lines.length || confirm('Remove this section and its ' + s.lines.length + ' lines?')) upd({ sections: ce.sections.filter(function (x, i) { return i !== si; }) }); }}>${I.trash}</button>`}
+      </div>
+      ${!narrow && s.lines.length > 0 && html`<div class="ce-line ce-head muted"><span>Service</span><span>Quantity</span><span>Unit</span><span>Unit price</span><span class="r">Total</span><span title="Agency fee applies">Fee</span><span></span></div>`}
+      ${s.lines.map(function (l, li) {
+        var q = Number(l.qty) || 0, off = l.std != null && Number(l.price) !== Number(l.std);
+        return html`<div key=${l.id} class="ce-line">
+          <div class="stack" style="gap: 6px; min-width: 0">
+            <textarea class="inp" rows="1" aria-label="Service" style="resize: vertical; min-height: 44px" placeholder="Service description" value=${l.name} onInput=${function (e) { updLine(si, li, { name: e.target.value }); }}></textarea>
+            ${en && html`<textarea class=${'inp ceen' + (l.nameEn ? '' : ' miss')} rows="1" lang="en" aria-label="Service in English" placeholder="Service in English" value=${l.nameEn || ''} onInput=${function (e) { updLine(si, li, { nameEn: e.target.value }); }}></textarea>`}
+            <input class="inp" aria-label="Quantity breakdown" style="font-size: 13px; min-height: 36px" placeholder="Breakdown (optional), e.g. 2 smjene × 2 aktera × 18 lokacija" value=${l.calc || ''} onInput=${function (e) { updLine(si, li, { calc: e.target.value }); }} />
+            ${l.code && html`<span class="muted" style="font-size: 11px">${l.code}${off ? ' · price list ' + ceMoney(l.std) : ''}</span>`}
+          </div>
+          <label><span class="ce-lab">Quantity</span><input class="inp num" inputmode="decimal" aria-label="Quantity" value=${l.qtyT != null ? l.qtyT : numIn(l.qty)} onInput=${function (e) { var n = parseNum(e.target.value); updLine(si, li, { qtyT: e.target.value, qty: isNaN(n) ? 0 : n }); }} /></label>
+          <label><span class="ce-lab">Unit</span><select class="inp" aria-label="Unit" value=${l.unit} onChange=${function (e) { updLine(si, li, { unit: e.target.value }); }}>${CE_UNITS.map(function (u) { return html`<option value=${u[0]}>${u[1]}</option>`; })}${!ceUnit(l.unit) && html`<option value=${l.unit}>${l.unit}</option>`}</select><span class="muted" style="font-size: 11px">${ceUnitText(l.unit, q, 'me')}</span></label>
+          <label><span class="ce-lab">Unit price</span><input class=${'inp num' + (off ? ' off' : '')} inputmode="decimal" aria-label="Unit price, EUR" value=${l.priceT != null ? l.priceT : numIn(l.price)} onInput=${function (e) { var n = parseNum(e.target.value); updLine(si, li, { priceT: e.target.value, price: isNaN(n) ? 0 : n }); }} /></label>
+          <div class="num r" style="font-weight: 600; align-self: center"><span class="ce-lab">Total</span>${ceMoney(r2(q * (Number(l.price) || 0)))}</div>
+          <label class="ce-fee" title="Agency fee applies to this line"><span class="ce-lab">Fee</span><input type="checkbox" aria-label="Agency fee applies" checked=${l.fee !== false} onChange=${function (e) { updLine(si, li, { fee: e.target.checked }); }} /></label>
+          <div class="row" style="gap: 0; flex-wrap: nowrap; align-self: center">
+            <button class="icon" aria-label="Move up" disabled=${li === 0} onClick=${function () { moveLine(si, li, -1); }}>↑</button>
+            <button class="icon" aria-label="Move down" disabled=${li === s.lines.length - 1} onClick=${function () { moveLine(si, li, 1); }}>↓</button>
+            <button class="icon" aria-label="Remove line" onClick=${function () { updSec(si, { lines: s.lines.filter(function (x, i) { return i !== li; }) }); }}>${I.x}</button>
+          </div>
+        </div>`; })}
+      <div class="pad row"><button class="btn sm" onClick=${function () { setPick(si); }}>${I.plus} Add from price list</button><button class="btn q sm" onClick=${function () { addCustom(si); }}>${I.plus} Custom line</button></div>
+    </section>`; })}
+    <button class="btn q" style="align-self: flex-start" onClick=${function () { upd({ sections: ce.sections.concat([{ id: uid('s'), title: '', titleEn: '', lines: [] }]) }); }}>${I.plus} Add section</button>
+
+    <section class="card pad stack" aria-label="Totals" style="gap: 10px; max-width: 640px; margin-left: auto; width: 100%">
+      <div class="row ce-tl"><span>Subtotal</span><b class="num">${ceMoney(tot.sub)}</b></div>
+      <div class="stack" style="gap: 6px">
+        <div class="row ce-tl"><span>Agency fee ${ce.fee}%${tot.feeBase !== tot.sub ? html` <span class="muted" style="font-size: 12px">on ${ceMoney(tot.feeBase)}</span>` : ''}</span><b class="num">${ceMoney(tot.fee)}</b></div>
+        <div class="row" role="radiogroup" aria-label="Agency fee">${CE_FEES.map(function (p) { return html`<button key=${p} role="radio" aria-checked=${Number(ce.fee) === p} class=${'chip' + (Number(ce.fee) === p ? ' on' : '')} onClick=${function () { upd({ fee: p }); if (client && client.fee !== p) setMkDefault(client.fee == null); }}>${p}%</button>`; })}</div>
+        ${client && html`<label class="row muted" style="gap: 8px; font-size: 13px"><input type="checkbox" checked=${mkDefault || client.fee === Number(ce.fee)} disabled=${client.fee === Number(ce.fee)} onChange=${function (e) { setMkDefault(e.target.checked); setDirty(true); }} /> ${client.fee === Number(ce.fee) ? ce.fee + '% is ' + client.name + '’s usual fee' : 'Make ' + ce.fee + '% the usual fee for ' + client.name}</label>`}
+      </div>
+      <div class="row ce-tl" style="border-top: 1.5px solid var(--ink); padding-top: 8px; font-size: 16px"><b>TOTAL (NET)</b><b class="num">${ceMoney(tot.net)}</b></div>
+      <button class=${'btn ' + (ce.vat ? '' : 'o')} aria-pressed=${!!ce.vat} style="align-self: flex-start" onClick=${function () { upd({ vat: !ce.vat }); }}>${ce.vat ? '✓ PDV 21% added' : '+ PDV 21%'}</button>
+      ${ce.vat ? html`<div class="row ce-tl"><span>PDV ${CE_VAT}%</span><b class="num">${ceMoney(tot.vat)}</b></div><div class="row ce-tl" style="font-size: 16px"><b>TOTAL WITH PDV</b><b class="num">${ceMoney(tot.grand)}</b></div>` : html`<div class="muted" style="font-size: 13px">Without PDV. The estimate says “PDV nije uračunat.”</div>`}
+    </section>
+
+    <section class="card pad stack" aria-label="Notes" style="gap: 10px">
+      <b>Notes</b>
+      ${CE_NOTES.map(function (n) { var on = (ce.notes || []).some(function (x) { return x.std === n.id; }); return html`<label key=${n.id} class="row" style="gap: 10px; align-items: flex-start; flex-wrap: nowrap; font-size: 14px"><input type="checkbox" style="margin-top: 3px" checked=${on} onChange=${function (e) { upd({ notes: e.target.checked ? (ce.notes || []).concat([{ std: n.id }]) : ce.notes.filter(function (x) { return x.std !== n.id; }) }); }} /><span>${n.me}${en ? html`<span class="muted" style="display: block; font-size: 12px">${n.en}</span>` : ''}</span></label>`; })}
+      ${(ce.notes || []).map(function (n, ni) { return n.std ? null : html`<div key=${'n' + ni} class="row" style="flex-wrap: nowrap; align-items: flex-start"><div class="stack" style="gap: 6px; flex: 1"><textarea class="inp" rows="2" aria-label="Note" value=${n.me} onInput=${function (e) { var a = ce.notes.slice(); a[ni] = Object.assign({}, n, { me: e.target.value }); upd({ notes: a }); }}></textarea>${en && html`<textarea class=${'inp ceen' + (n.en ? '' : ' miss')} rows="2" lang="en" aria-label="Note in English" placeholder="Note in English" value=${n.en || ''} onInput=${function (e) { var a = ce.notes.slice(); a[ni] = Object.assign({}, n, { en: e.target.value }); upd({ notes: a }); }}></textarea>`}</div><button class="icon" aria-label="Remove note" onClick=${function () { upd({ notes: ce.notes.filter(function (x, i) { return i !== ni; }) }); }}>${I.x}</button></div>`; })}
+      <button class="btn q sm" style="align-self: flex-start" onClick=${function () { upd({ notes: (ce.notes || []).concat([{ me: '', en: '' }]) }); }}>${I.plus} Own note</button>
+    </section>
+
+    <div class="row" style="justify-content: space-between">
+      <div class="muted" style="font-size: 12px">${ce.id ? 'Created by ' + userName(ce.by) + ' · ' + (ce.created || '') + (ce.updatedAt ? ' · last saved ' + ce.updatedAt + ' by ' + userName(ce.updatedBy) : '') : 'Not saved yet'}</div>
+      <div class="row">${ce.id && html`<button class="btn q sm" onClick=${duplicate}>Duplicate</button>`}${ce.id && canDelete && html`<button class="btn q sm" onClick=${remove}>${I.trash} Delete</button>`}</div>
+    </div>
+    ${pick != null && html`<${ServicePicker} onPick=${addFromPrice} onClose=${function () { setPick(null); }} />`}
+  </main>`;
+}
+function ServicePicker(p) {
+  var qs = useState(''), q = qs[0], setQ = qs[1], cs = useState('all'), cat = cs[0], setCat = cs[1], as = useState([]), added = as[0], setAdded = as[1];
+  var svcs = G.data.svc.filter(function (s) { return s.active !== false && (cat === 'all' || s.cat === cat); }).filter(function (s) { var t = q.trim().toLowerCase(); return !t || [s.code, s.name, s.nameEn].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; }); })
+    .sort(function (a, b) { return String(a.code || a.name).localeCompare(String(b.code || b.name)); });
+  return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) p.onClose(); }}><div class="modal" style="max-width: 760px" role="dialog" aria-modal="true" aria-labelledby="sp-title">
+    <div class="mhead"><div style="flex-grow: 1"><h2 id="sp-title" style="font-size: 20px">Add from price list</h2><div class="muted" style="font-size: 13px">${added.length ? added.length + ' added. Keep adding or close.' : 'Tap a service to add it. You can change name and price in the estimate.'}</div></div><button class="icon" aria-label="Close" onClick=${p.onClose}>${I.x}</button></div>
+    <div class="mbody" style="gap: 12px">
+      <input id="sp-q" class="inp" type="search" placeholder="Search services" value=${q} onInput=${function (e) { setQ(e.target.value); }} />
+      <div class="row">${[{ id: 'all', name: 'All' }].concat(ceCats()).map(function (c) { return html`<button key=${c.id} class=${'chip' + (cat === c.id ? ' on' : '')} onClick=${function () { setCat(c.id); }}>${c.name}</button>`; })}</div>
+      ${!G.data.svc.length ? html`<div class="empty">The price list is empty. Open Cost estimates → Price list to load the standard one.</div>` : null}
+      <div class="stack" style="gap: 6px">${svcs.map(function (s) { var n = added.filter(function (x) { return x === s.id; }).length; return html`<button key=${s.id} class="choice" style="padding: 10px 14px; gap: 12px; align-items: center" onClick=${function () { p.onPick(s); setAdded(added.concat([s.id])); }}>
+        <span class="mono muted" style="font-size: 12px; flex: none; width: 46px">${s.code || ''}</span><span style="flex: 1; text-align: left">${s.name}</span><span class="num" style="flex: none; font-weight: 600">${ceMoney(s.price)}<span class="muted" style="font-weight: 400"> / ${ceUnitText(s.unit, 1, 'me')}</span></span>${n ? html`<span class="badge s4">+${n}</span>` : ''}</button>`; })}
+        ${G.data.svc.length > 0 && !svcs.length && html`<div class="empty">No service matches.</div>`}</div>
+    </div></div></div>`;
+}
+function PriceList() {
+  var qs = useState(''), q = qs[0], setQ = qs[1], es = useState(null), ed = es[0], setEd = es[1], cs = useState(null), cated = cs[0], setCated = cs[1], ss = useState(false), showOff = ss[0], setShowOff = ss[1];
+  var cats = ceCats();
+  if (!G.data.svc.length && !G.data.svccats.length) return html`<section class="card pad stack" style="align-items: flex-start"><b>The price list is empty</b><p class="muted" style="margin: 0">Load the DAA standard price list: ${CE_SEED.length} services in ${CE_SEED_CATS.length} categories, made from the existing cost estimates. Everything can be edited afterwards.</p><button class="btn" onClick=${function () { ceSeedPriceList().then(function () { toast('Price list loaded.'); }); }}>Load the standard price list</button></section>`;
+  function open(s) { setEd(s ? { id: s.id, code: s.code || '', cat: s.cat, name: s.name, nameEn: s.nameEn || '', unit: s.unit, price: numIn(s.price), fee: s.fee !== false, active: s.active !== false, err: '' } : { id: null, code: '', cat: (cats[0] || {}).id || '', name: '', nameEn: '', unit: 'kom', price: '', fee: true, active: true, err: '' }); }
+  async function save(e) {
+    e.preventDefault();
+    var price = parseNum(ed.price);
+    if (!ed.name.trim()) { setEd(Object.assign({}, ed, { err: 'Add the service name.' })); return; }
+    if (isNaN(price) || price < 0) { setEd(Object.assign({}, ed, { err: 'Enter the price in EUR, e.g. 350 or 0,55.' })); return; }
+    var old = ed.id && byId(G.data.svc, ed.id), data = { code: ed.code.trim(), cat: ed.cat, name: ed.name.trim(), nameEn: ed.nameEn.trim(), unit: ed.unit, price: price, fee: ed.fee, active: ed.active, updatedBy: G.me.id, updatedAt: stamp() };
+    if (old && old.price !== price) data.history = (old.history || []).concat([{ price: old.price, until: stamp(), by: old.updatedBy || '' }]).slice(-20);
+    if (await put('svc', ed.id || uid('svc'), Object.assign({}, old || {}, data))) {
+      logEv('data', (ed.id ? 'Changed' : 'Added') + ' price list service ' + (data.code ? data.code + ' ' : '') + data.name + (old && old.price !== price ? ': ' + fmt(old.price) + ' → ' + fmt(price) + ' €' : ''));
+      toast('Saved.'); setEd(null);
+    }
+  }
+  var list = G.data.svc.filter(function (s) { return (showOff || s.active !== false); }).filter(function (s) { var t = q.trim().toLowerCase(); return !t || [s.code, s.name, s.nameEn].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; }); });
+  var form = ed && html`<form class="card pad stack" style="border-color: var(--ink)" onSubmit=${save} aria-label="Edit service">
+    <b>${ed.id ? 'Edit service' : 'New service'}</b>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))">
+      <${Field} label="Code" hint="Optional, e.g. VS-05"><input id="pl-code" class="inp mono" value=${ed.code} onInput=${inputOn(ed, setEd, 'code')} /><//>
+      <${Field} label="Category"><select id="pl-cat" class="inp" value=${ed.cat} onChange=${inputOn(ed, setEd, 'cat')}>${cats.map(function (c) { return html`<option value=${c.id}>${c.name}</option>`; })}</select><//>
+      <${Field} label="Unit"><select id="pl-unit" class="inp" value=${ed.unit} onChange=${inputOn(ed, setEd, 'unit')}>${CE_UNITS.map(function (u) { return html`<option value=${u[0]}>${u[1]}</option>`; })}</select><//>
+      <${Field} label="Price (EUR, without PDV)" req><input id="pl-price" class="inp num" inputmode="decimal" value=${ed.price} onInput=${inputOn(ed, setEd, 'price')} /><//>
+      <${Field} label="Name (Montenegrin)" req wide><input id="pl-name" class="inp" value=${ed.name} onInput=${inputOn(ed, setEd, 'name')} /><//>
+      <${Field} label="Name (English)" wide><input id="pl-name-en" class="inp" lang="en" value=${ed.nameEn} onInput=${inputOn(ed, setEd, 'nameEn')} /><//>
+    </div>
+    <label class="row" style="gap: 8px"><input type="checkbox" checked=${ed.fee} onChange=${function (e) { setEd(Object.assign({}, ed, { fee: e.target.checked })); }} /> Agency fee applies</label>
+    ${ed.id && html`<label class="row" style="gap: 8px"><input type="checkbox" checked=${ed.active} onChange=${function (e) { setEd(Object.assign({}, ed, { active: e.target.checked })); }} /> In use (untick to hide it from new estimates)</label>`}
+    ${ed.err && html`<div class="alert e" role="alert">${ed.err}</div>`}
+    <div class="muted" style="font-size: 12px">A new price applies to new lines only. Estimates already made keep their prices.</div>
+    <div class="row"><button class="btn" type="submit">Save</button><button class="btn q" type="button" onClick=${function () { setEd(null); }}>Cancel</button></div>
+  </form>`;
+  return html`
+    <section class="card pad row" style="justify-content: space-between">
+      <label style="flex: 1 1 260px; max-width: 420px"><span class="sr">Search price list</span><input id="pl-q" class="inp" type="search" placeholder="Search code or service" value=${q} onInput=${function (e) { setQ(e.target.value); }} /></label>
+      <div class="row"><label class="row muted" style="gap: 6px; font-size: 13px"><input type="checkbox" checked=${showOff} onChange=${function (e) { setShowOff(e.target.checked); }} /> Show services not in use</label>
+        <button class="btn q sm" onClick=${function () { setCated(cats.map(function (c) { return { id: c.id, name: c.name, nameEn: c.nameEn || '' }; })); }}>Categories</button>
+        <button class="btn sm" onClick=${function () { open(null); }}>${I.plus} New service</button></div>
+    </section>
+    ${ed && !ed.id && form}
+    ${cated && html`<section class="card pad stack" aria-label="Categories"><b>Categories</b>
+      ${cated.map(function (c, i) { return html`<div key=${c.id} class="grid" style="grid-template-columns: 1fr 1fr; gap: 8px"><input class="inp" aria-label="Category name" value=${c.name} onInput=${function (e) { var a = cated.slice(); a[i] = Object.assign({}, c, { name: e.target.value }); setCated(a); }} /><input class="inp" lang="en" aria-label="Category name in English" placeholder="English" value=${c.nameEn} onInput=${function (e) { var a = cated.slice(); a[i] = Object.assign({}, c, { nameEn: e.target.value }); setCated(a); }} /></div>`; })}
+      <div class="row"><button class="btn q sm" onClick=${function () { setCated(cated.concat([{ id: uid('cat'), name: '', nameEn: '', fresh: true }])); }}>${I.plus} Add category</button>
+        <button class="btn sm" onClick=${async function () { for (var i = 0; i < cated.length; i++) { var c = cated[i]; if (!c.name.trim()) continue; await put('svccats', c.id, Object.assign({}, byId(G.data.svccats, c.id) || {}, { name: c.name.trim(), nameEn: c.nameEn.trim(), order: i + 1 })); } setCated(null); toast('Categories saved.'); }}>Save categories</button>
+        <button class="btn q sm" onClick=${function () { setCated(null); }}>Cancel</button></div></section>`}
+    ${cats.map(function (c) { var rows = list.filter(function (s) { return s.cat === c.id; }).sort(function (a, b) { return String(a.code || a.name).localeCompare(String(b.code || b.name)); }); if (!rows.length && q) return null; return html`<section key=${c.id} class="card" style="overflow: hidden" aria-label=${c.name}>
+      <div class="pad row" style="justify-content: space-between; background: var(--bg); border-bottom: 1px solid var(--line-2)"><div><b>${c.name}</b>${c.nameEn && html`<span class="muted" style="font-size: 13px"> · ${c.nameEn}</span>`}</div><span class="muted" style="font-size: 13px">${rows.length} services</span></div>
+      ${rows.map(function (s) { return ed && ed.id === s.id ? html`<div key=${s.id} class="pad">${form}</div>` : html`<div key=${s.id} class="pad row ce-svc" style=${'border-top: 1px solid var(--line-2); flex-wrap: nowrap; gap: 12px' + (s.active === false ? '; opacity: 0.55' : '')}>
+        <span class="mono muted" style="font-size: 12px; flex: none; width: 50px">${s.code || ''}</span>
+        <div style="flex: 1; min-width: 0"><div>${s.name}${s.active === false ? html` <span class="badge s5">Not in use</span>` : ''}</div>${s.nameEn && html`<div class="muted" style="font-size: 12px">${s.nameEn}</div>`}${s.fee === false && html`<div class="muted" style="font-size: 12px">No agency fee</div>`}</div>
+        <div class="num" style="flex: none; text-align: right"><b>${ceMoney(s.price)}</b><div class="muted" style="font-size: 12px">per ${ceUnitText(s.unit, 1, 'me')}</div></div>
+        <button class="btn q sm" style="flex: none" onClick=${function () { open(s); }}>Edit</button></div>`; })}
+      ${!rows.length && html`<div class="empty" style="padding: 16px">No services in this category.</div>`}
+    </section>`; })}`;
+}
+
 var root = document.getElementById('app');
 root.textContent = '';
 render(html`<${App} />`, root);

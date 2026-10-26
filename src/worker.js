@@ -1,8 +1,8 @@
 // DAA Pay — Cloudflare Worker: API, sign-in, role rules, files, email, weekly report, backups.
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
-const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news'];
-const APP_VERSION = '0.3.0';
+const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
+const APP_VERSION = '0.4.0';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -424,6 +424,15 @@ async function writeDoc(env, me, b) {
   } else if (col === 'news') {
     if (!top || !cur) deny('Only the CEO or Super-admin can manage announcements.');
     if (op !== 'delete') { const ks = Object.keys(data); if (!ks.every((k) => ['active', 'until'].includes(k))) deny(); next = merge(cur, Object.assign({}, data, data.active === false ? { endedBy: me.id, endedAt: podgoricaStamp().short } : {})); }
+  } else if (col === 'ces') {
+    if (op === 'delete' && cur && cur.by !== me.id && !top) deny('Only the author, the CEO or the Super-admin can delete a cost estimate.');
+    if (op !== 'delete') {
+      if (cur) { next.by = cur.by; next.ts = cur.ts; next.created = cur.created; } else { next.by = me.id; next.ts = now(); }
+      const no = (d) => String(d.projNo) + '-' + d.seq + '/' + d.year;
+      if ((await allDocs(env, 'ces')).some((c) => c.id !== id && no(c) === no(next))) fail(409, 'That cost estimate number is already used. Change the sequence number.');
+    }
+  } else if (col === 'svc' || col === 'svccats') {
+    if (op === 'delete' && !top) deny('Set the service as not in use instead of deleting it.');
   } else if (col === 'bens') {
     if (op === 'delete' && !top) deny('Only the CEO or Super-admin can delete beneficiaries.');
     if (op !== 'delete') { if (!cur) { next.createdBy = me.id; next.createdAt = next.createdAt || podgoricaStamp().short; } else { next.createdBy = cur.createdBy || ''; next.createdAt = cur.createdAt || ''; } }

@@ -2,7 +2,8 @@
 
 Payment queue for DAA Montenegro d.o.o.: incoming invoices (read from the fiscal QR code and the
 invoice text), refund requests and payments by contract, with approvals by role, emails, PDF export,
-beneficiary archive, activity log and backups.
+beneficiary archive, activity log and backups. Also: cost estimates (predračuni) built from a shared
+price list, exported as PDF and Excel in Montenegrin or English.
 
 Runs on Cloudflare: one **Worker** serves the app and its API, **D1** is the database, **R2** stores
 uploaded files and daily backups. Deploys from GitHub Actions on every push to `main`.
