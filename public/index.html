@@ -204,6 +204,7 @@ dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break:
 .inp.off { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .ce-tl { justify-content: space-between; flex-wrap: nowrap; }
 .ce-ed { padding-bottom: 40px; }
+.ce-bulk { position: sticky; top: 0; z-index: 4; border-color: var(--ink); }
 .flash { animation: flash 1.6s ease-out; }
 @keyframes flash { 0%, 40% { box-shadow: inset 0 0 0 2px var(--ink); } 100% { box-shadow: none; } }
 .pj-row { display: grid; grid-template-columns: minmax(0, 2fr) 1fr 130px 130px 170px 110px; gap: 12px; padding: 10px 16px; align-items: center; font-size: 14px; }
@@ -338,7 +339,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.5.2';
+var APP_VERSION = '0.5.3';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -736,7 +737,7 @@ function itemNet(x) {
 function VatBox(p) {
   var x = p.x, me = G.me, st = x.status || 0, es = useState(null), ed = es[0], setEd = es[1];
   if (x.amount == null) return null;
-  var canEdit = isTop(me.role) || me.role === 'om' || me.role === 'am' || (x.by === me.id && st <= 2);
+  var canEdit = isTop(me.role) || me.role === 'om' || me.role === 'am' || (x.by === me.id && (st <= 2 || st === 5));
   var net = itemNet(x), vat = r2(x.amount - net), fresh = x.net != null && x.netOf === x.amount;
   var src = !fresh && x.vatSrc ? 'recalculated for the new amount' : x.vatSrc === 'invoice' ? 'read from the invoice' : x.vatSrc === 'manual' ? 'set by hand' : 'PDV 21% assumed, check the invoice';
   async function save() {
@@ -1019,7 +1020,8 @@ var HELP = [
   { id: 'approvals', title: 'Approvals and statuses', text: [
     'Each request moves through To review → Approved → Approved for payment → Sent to payment → Paid. It can also be Denied with a reason, which goes to the person who added it.',
     'Account managers approve or deny. The CEO approves for payment and sends to payment; the office manager then gets an email with the payment details and marks it Paid once executed. The person who added the request is emailed when it is paid.',
-    'An invoice can only be sent to payment once it has a bank account.'] },
+    'An invoice can only be sent to payment once it has a bank account.',
+    'Denied? Open the request and choose Correct this request: change the details or documents, say what you changed and tap Send back for approval. It starts again at To review, the reviewers and the person who denied it are told, and earlier denials stay visible on the request.'] },
   { id: 'accounts', title: 'Bank accounts', text: [
     'Montenegrin accounts have a 3-digit bank code, the account number and 2 last digits, for example 565-40-27. Type the short form; DAA Pay fills in the zeros (565-0000000000040-27) and shows the bank name.',
     'Accounts printed on the invoice are read automatically. You can correct them in the upload form, in the request preview or under Beneficiaries.'] },
@@ -1627,6 +1629,7 @@ function Drawer() {
               <div class="row"><button class="btn d" disabled=${!denyText.trim()} onClick=${sendDeny}>Deny and notify</button><button class="btn q" style="background: var(--surface)" onClick=${function () { setUi({ denyOpen: false }); }}>Cancel</button></div>
             </div>`}
           </div>
+          ${st !== 5 && x.resubmittedAt && st === 0 ? html`<div class="alert i" style="font-size: 13px">Corrected and sent back ${x.resubmittedAt} by ${userName(x.resubmittedBy)}${(x.denials || []).slice(-1)[0] && x.denials.slice(-1)[0].note ? ': ' + x.denials.slice(-1)[0].note : '.'}</div>` : ''}
           ${st === 5 ? html`<div class="alert e" role="status"><b>Denied by ${userName(x.deniedBy)}</b> · reason sent to ${x.by ? userName(x.by) : 'the initiator (not set)'}<div style="margin-top: 4px; white-space: pre-line; color: var(--ink)">${x.denyReason}</div></div>`
             : html`<ol class="steps" aria-label="Status">${STATUS.slice(0, 5).map(function (l, i) { return html`<li class=${(i <= st ? 'done' : '') + (i === st ? ' cur' : '')}><i></i><span>${l}</span></li>`; })}</ol><div class="stepnow">Step ${st + 1} of 5 · <b>${STATUS[st]}</b></div>`}
           ${st === 3 && html`<div style="font-size: 13px">Sent to ${G.data.users.filter(function (u) { return u.role === 'om'; }).map(nameOf).join(', ') || 'the office manager'} for payment.</div>`}
@@ -1638,6 +1641,8 @@ function Drawer() {
             : html`<div class="alert e row" style="font-size: 13px"><span style="flex-grow: 1">Payment email not sent (${x.mail.at}): ${x.mail.err}.</span>${top && html`<button class="btn sm" disabled=${G.ui.busy === 'mail'} onClick=${function () { mailPayment([x]); }}>${G.ui.busy === 'mail' ? 'Sending…' : 'Retry email'}</button>`}</div>`)}
         </div>
 
+        ${st === 5 && html`<${FixDenied} x=${x} />`}
+        ${(x.denials || []).length > 0 && html`<${DenialHistory} x=${x} />`}
         ${x.kind === 'invoice' && !needs && html`<${InvoiceDetails} x=${x} />`}
         ${needs && html`<${PendingDetails} x=${x} />`}
         ${x.kind !== 'invoice' && html`<${RequestDetails} x=${x} />`}
@@ -1647,9 +1652,90 @@ function Drawer() {
       </div>
     </div></div>`;
 }
+// ---------- denied requests: correct and send back for approval
+function canFix(x) { var me = G.me; return (x.status || 0) === 5 && (x.by === me.id || isTop(me.role) || me.role === 'am'); }
+function FixDenied(p) {
+  var x = p.x, me = G.me, inv = x.kind === 'invoice';
+  var init = function () { return { title: x.title || '', number: x.number || '', iso: x.iso || '', due: x.due || '', amount: numIn(x.amount), fields: (x.fields || []).map(function (f) { return { label: f.label, value: f.value }; }), attach: (x.attachments || []).slice(), add: [], file: null, note: '', err: '' }; };
+  var os = useState(false), open = os[0], setOpen = os[1], fs = useState(init), f = fs[0], setF = fs[1], bs = useState(false), busy = bs[0], setBusy = bs[1];
+  if (!canFix(x)) return null;
+  var set = function (o) { setF(Object.assign({}, f, o, { err: '' })); };
+  function changes() {
+    var c = [], amt = parseNum(f.amount);
+    if (inv && f.title.trim() !== (x.title || '')) c.push('supplier name');
+    if (f.number.trim() !== (x.number || '') && inv) c.push('invoice number');
+    if (inv && f.iso !== (x.iso || '')) c.push('date');
+    if (inv && f.due.trim() !== (x.due || '')) c.push('due date');
+    if (!isNaN(amt) && amt !== x.amount) c.push('amount');
+    f.fields.forEach(function (fl, i) { if (String(fl.value) !== String((x.fields[i] || {}).value)) c.push(fl.label.toLowerCase()); });
+    if (f.file) c.push('invoice file');
+    if (f.add.length || f.attach.length !== (x.attachments || []).length) c.push('documents');
+    return c;
+  }
+  async function save(resubmit) {
+    var amt = parseNum(f.amount), c = changes();
+    if (isNaN(amt) || amt <= 0) { set({ err: 'Enter the amount.' }); return; }
+    if (resubmit && !c.length && !f.note.trim()) { set({ err: 'Change something, or say in the note why it should be approved as it is.' }); return; }
+    setBusy(true);
+    try {
+      var pt = { amount: amt };
+      if (inv) { pt.title = f.title.trim() || x.title; pt.number = f.number.trim(); pt.due = f.due.trim(); if (f.iso) { pt.iso = f.iso; pt.date = isoToDate(f.iso); } }
+      else {
+        pt.fields = f.fields.map(function (fl) { var v = String(fl.value).trim(); if (fl.label === 'Account number' && acctOk(v)) v = acctNorm(v); return { label: fl.label, value: v }; });
+        var ben = pt.fields.filter(function (fl) { return fl.label === 'Beneficiary'; })[0]; if (ben && ben.value) pt.title = ben.value;
+      }
+      if (f.file) { pt.prevFiles = (x.prevFiles || []).concat(x.fileId ? [{ fileId: x.fileId, fileName: x.fileName, replacedAt: stamp() }] : []); pt.fileId = await uploadFile(f.file); pt.fileName = f.file.name; pt.pdfPages = null; }
+      if (f.add.length || f.attach.length !== (x.attachments || []).length) {
+        var more = []; for (var i = 0; i < f.add.length; i++) more.push({ name: f.add[i].name, fileId: await uploadFile(f.add[i]) });
+        pt.attachments = f.attach.concat(more);
+      }
+      if (resubmit) { pt.status = 0; pt.resubmitNote = f.note.trim(); }
+      if (await patch('items', x.id, pt)) {
+        logEv('edit', (resubmit ? 'Corrected and sent back for approval: ' : 'Corrected: ') + pqNo(x.pqn) + (c.length ? ' (' + c.join(', ') + ')' : '') + (f.note.trim() ? ' · ' + f.note.trim() : ''), x.id);
+        if (resubmit) {
+          notify([{ to: 'role:review', from: me.id, itemId: x.id, text: nameOf(me) + ' corrected ' + pqNo(x.pqn) + ' · ' + (pt.title || x.title) + ' and sent it back for approval.' }].concat(x.deniedBy && x.deniedBy !== me.id ? [{ to: x.deniedBy, from: me.id, itemId: x.id, text: pqNo(x.pqn) + ', which you denied, was corrected by ' + nameOf(me) + ' and is back in To review.' }] : []));
+          window.daa.post('/api/notify/new', { ids: [x.id], resubmit: true }).catch(function () {});
+          toast(pqNo(x.pqn) + ' is back in To review.');
+        } else toast('Changes saved. Send it back for approval when ready.');
+        setOpen(false);
+      }
+    } catch (e) { set({ err: e.message || String(e) }); }
+    setBusy(false);
+  }
+  if (!open) return html`<div class="card pad row" style="justify-content: space-between; border-color: var(--danger)">
+    <div style="min-width: 0"><b>Fix and send back</b><div class="muted" style="font-size: 13px">Correct what the reason asks for, then send it back. It starts again at To review.</div></div>
+    <button class="btn" onClick=${function () { setF(init()); setOpen(true); }}>Correct this request</button></div>`;
+  var id = function (k) { return 'fx-' + k + '-' + x.id; };
+  return html`<div class="card pad stack" style="border-color: var(--ink)" aria-label="Correct the request">
+    <div class="row" style="justify-content: space-between"><b>Correct ${pqNo(x.pqn)}</b><button class="icon" aria-label="Close" onClick=${function () { setOpen(false); }}>${I.x}</button></div>
+    <div class="alert e" style="font-size: 13px"><b>Reason for denial:</b> ${x.denyReason || '—'}</div>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+      ${inv && html`<${Field} label="Supplier" wide><input id=${id('title')} class="inp" value=${f.title} onInput=${function (e) { set({ title: e.target.value }); }} /><//>
+        <${Field} label="Invoice number"><input id=${id('no')} class="inp" value=${f.number} onInput=${function (e) { set({ number: e.target.value }); }} /><//>
+        <${Field} label="Issue date"><input id=${id('date')} class="inp" type="date" value=${f.iso} onInput=${function (e) { set({ iso: e.target.value }); }} /><//>
+        <${Field} label="Due date"><input id=${id('due')} class="inp" placeholder="dd.mm.yyyy" value=${f.due} onInput=${function (e) { set({ due: e.target.value }); }} /><//>`}
+      ${!inv && f.fields.map(function (fl, i) { return html`<${Field} key=${fl.label} label=${fl.label} wide=${/Reason|Purpose|Legal/.test(fl.label)}>${/Reason|Purpose/.test(fl.label) ? html`<textarea class="inp" rows="2" value=${fl.value} onInput=${function (e) { var a = f.fields.slice(); a[i] = { label: fl.label, value: e.target.value }; set({ fields: a }); }}></textarea>` : html`<input class=${'inp' + (/Account|IBAN|JMBG|reference/.test(fl.label) ? ' mono' : '')} value=${fl.value} onInput=${function (e) { var a = f.fields.slice(); a[i] = { label: fl.label, value: e.target.value }; set({ fields: a }); }} />`}<//>`; })}
+      <${Field} label="Amount (EUR)" req hint=${inv && x.iic ? 'From the fiscal QR code; change it only if the invoice itself changed' : ''}><input id=${id('amt')} class="inp num" inputmode="decimal" value=${f.amount} onInput=${function (e) { set({ amount: e.target.value }); }} /><//>
+    </div>
+    ${inv && html`<div class="row"><label class="btn q sm" style="cursor: pointer">${I.dl} ${f.file ? 'Change new invoice file' : 'Replace invoice file'}<input class="sr" type="file" accept="application/pdf,image/*" onChange=${function (e) { set({ file: (e.target.files || [])[0] || null }); }} /></label>${f.file && html`<span class="filebox" style="font-size: 13px">${f.file.name}</span>`}</div>
+      <div class="muted" style="font-size: 12px">Bank account and NET + PDV are corrected in their own boxes above.</div>`}
+    ${!inv && html`<div class="stack" style="gap: 6px"><span style="font-size: 13px; font-weight: 500">Documents</span>
+      ${f.attach.map(function (a, i) { return html`<div key=${a.fileId} class="row" style="justify-content: space-between; font-size: 13px"><span>${a.name}</span><button class="btn q sm" onClick=${function () { set({ attach: f.attach.filter(function (z, j) { return j !== i; }) }); }}>Remove</button></div>`; })}
+      ${f.add.map(function (a, i) { return html`<div key=${'n' + i} class="row" style="justify-content: space-between; font-size: 13px"><span>${a.name} <span class="badge s1">new</span></span><button class="btn q sm" onClick=${function () { set({ add: f.add.filter(function (z, j) { return j !== i; }) }); }}>Remove</button></div>`; })}
+      <label class="btn q sm" style="cursor: pointer; align-self: flex-start">${I.clip} Add documents<input class="sr" type="file" multiple onChange=${function (e) { set({ add: f.add.concat([].slice.call(e.target.files || [])) }); }} /></label></div>`}
+    <${Field} label="What did you change? (sent to the reviewers)"><textarea id=${id('note')} class="inp" rows="2" placeholder="For example: attached the signed contract and corrected the account number" value=${f.note} onInput=${function (e) { set({ note: e.target.value }); }}></textarea><//>
+    ${f.err && html`<div class="alert e" role="alert">${f.err}</div>`}
+    <div class="row"><button class="btn" disabled=${busy} onClick=${function () { save(true); }}>${busy ? 'Saving…' : 'Send back for approval'}</button><button class="btn q" disabled=${busy} onClick=${function () { save(false); }}>Save without sending</button></div>
+  </div>`;
+}
+function DenialHistory(p) {
+  var ds = p.x.denials || [];
+  return html`<details class="card pad"><summary style="cursor: pointer; font-weight: 600; min-height: 28px">Earlier denials (${ds.length})</summary>
+    <ol style="margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 13px">${ds.slice().reverse().map(function (d, i) { return html`<li key=${i}><b>Denied${d.by ? ' by ' + userName(d.by) : ''}${d.at ? ' · ' + d.at : ''}:</b> ${d.reason || '—'}<div class="muted">Corrected by ${userName(d.fixedBy)} · ${d.fixedAt || ''}${d.note ? ' · ' + d.note : ''}</div></li>`; })}</ol></details>`;
+}
 function LinkedBox(p) {
   var x = p.x, me = G.me, st = x.status || 0;
-  var canEdit = isTop(me.role) || ((me.role === 'am' || x.by === me.id) && st <= 2);
+  var canEdit = isTop(me.role) || ((me.role === 'am' || x.by === me.id) && (st <= 2 || st === 5));
   var es = useState(null), ed = es[0], setEd = es[1];   // draft while editing
   var bs = useState(false), busy = bs[0], setBusy = bs[1];
   var est = x.estimate;
@@ -2710,21 +2796,79 @@ function CeList() {
   }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
   var clients = G.data.clients.filter(function (c) { return G.data.ces.some(function (e) { return e.clientId === c.id; }); }).sort(function (a, b) { return a.name.localeCompare(b.name); });
   var open = function (c) { setUi({ ce: c.id }); };
+  var ss = useState({}), sel = ss[0], setSel = ss[1], ls = useState('me'), lang = ls[0], setLang = ls[1], bs = useState(''), busy = bs[0], setBusy = bs[1];
+  var chosen = list.filter(function (c) { return sel[c.id]; }), allOn = list.length > 0 && chosen.length === list.length;
+  var toggle = function (id) { var o = Object.assign({}, sel); if (o[id]) delete o[id]; else o[id] = true; setSel(o); };
+  var canDel = function (c) { return c.by === G.me.id || isTop(G.me.role); };
+  async function bulkPdf() {
+    setBusy('pdf');
+    try {
+      var PL = window.PDFLib, out = await PL.PDFDocument.create();
+      for (var i = 0; i < chosen.length; i++) { var src = await PL.PDFDocument.load(await ceMakePdf(chosen[i], lang)); (await out.copyPages(src, src.getPageIndices())).forEach(function (pg) { out.addPage(pg); }); }
+      await saveFile(chosen.length === 1 ? ceFileName(chosen[0], lang, 'pdf') : 'DAA cost estimates ' + todayIso() + (lang === 'en' ? ' (EN)' : '') + '.pdf', await out.save());
+    } catch (e) { toast('Could not create the PDF: ' + (e.message || e), true); }
+    setBusy('');
+  }
+  async function bulkXlsx() {
+    setBusy('xlsx');
+    try {
+      if (chosen.length === 1) await saveFile(ceFileName(chosen[0], lang, 'xlsx'), await ceMakeXlsx(chosen[0], lang));
+      else {
+        var files = [];
+        for (var i = 0; i < chosen.length; i++) files.push({ name: ceFileName(chosen[i], lang, 'xlsx'), data: new Uint8Array(await (await ceMakeXlsx(chosen[i], lang)).arrayBuffer()) });
+        await saveFile('DAA cost estimates ' + todayIso() + (lang === 'en' ? ' (EN)' : '') + '.zip', new Blob([zipStore(files)], { type: 'application/zip' }));
+      }
+    } catch (e) { toast('Could not create the Excel files: ' + (e.message || e), true); }
+    setBusy('');
+  }
+  async function bulkStatus(st) {
+    if (!st) return; setBusy('status'); var n = 0;
+    for (var i = 0; i < chosen.length; i++) if ((chosen[i].status || 'draft') !== st && await patch('ces', chosen[i].id, { status: st, updatedBy: G.me.id, updatedAt: stamp() })) n++;
+    if (n) logEv('data', 'Set ' + n + ' cost estimates to ' + CE_STATUS[st] + ': ' + chosen.map(ceNumber).join(', '));
+    toast(n + (n === 1 ? ' estimate' : ' estimates') + ' set to ' + CE_STATUS[st] + '.'); setBusy('');
+  }
+  async function bulkDelete() {
+    var ok = chosen.filter(canDel), skip = chosen.length - ok.length;
+    if (!ok.length) { toast('You can delete only the estimates you made (the CEO and Super-admin can delete any).', true); return; }
+    if (!confirm('Delete ' + ok.length + (ok.length === 1 ? ' cost estimate' : ' cost estimates') + ' (' + ok.map(ceNumber).join(', ') + ')?' + (skip ? ' ' + skip + ' made by others will be kept.' : '') + ' This cannot be undone.')) return;
+    setBusy('del'); var n = 0;
+    for (var i = 0; i < ok.length; i++) if (await del('ces', ok[i].id)) n++;
+    if (n) logEv('data', 'Deleted ' + n + ' cost estimates: ' + ok.map(ceNumber).join(', '));
+    setSel({}); setBusy(''); toast('Deleted ' + n + (n === 1 ? ' estimate.' : ' estimates.') + (skip ? ' Kept ' + skip + ' made by others.' : ''));
+  }
+  async function delOne(c, e) {
+    e.stopPropagation();
+    if (!confirm('Delete cost estimate ' + ceNumber(c) + ' – ' + (c.title || '') + '? This cannot be undone.')) return;
+    if (await del('ces', c.id)) { logEv('data', 'Deleted cost estimate ' + ceNumber(c)); toast('Deleted ' + ceNumber(c) + '.'); }
+  }
+  var bar = chosen.length > 0 && html`<section class="card pad row ce-bulk" aria-label="Selected estimates" style="gap: 8px">
+    <b style="margin-right: 4px">${chosen.length} selected</b>
+    <label class="row" style="gap: 6px; font-size: 13px">Language <select class="inp sm" style="width: auto" value=${lang} onChange=${function (e) { setLang(e.target.value); }}><option value="me">Montenegrin</option><option value="en">English</option></select></label>
+    <button class="btn sm" disabled=${!!busy} onClick=${bulkPdf}>${I.dl} ${busy === 'pdf' ? 'Preparing…' : chosen.length > 1 ? 'Download PDF (one file)' : 'Download PDF'}</button>
+    <button class="btn o sm" disabled=${!!busy} onClick=${bulkXlsx}>${I.dl} ${busy === 'xlsx' ? 'Preparing…' : chosen.length > 1 ? 'Download Excel (ZIP)' : 'Download Excel'}</button>
+    <select class="inp sm" style="width: auto" aria-label="Set status" disabled=${!!busy} value="" onChange=${function (e) { bulkStatus(e.target.value); e.target.value = ''; }}><option value="">Set status…</option>${Object.keys(CE_STATUS).map(function (k) { return html`<option value=${k}>${CE_STATUS[k]}</option>`; })}</select>
+    <button class="btn q sm" disabled=${!!busy} onClick=${bulkDelete}>${I.trash} Delete</button>
+    <button class="btn q sm" style="margin-left: auto" onClick=${function () { setSel({}); }}>Clear selection</button>
+  </section>`;
   return html`<section class="card pad grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))" aria-label="Filters">
       <${Field} label="Search"><input id="ce-q" class="inp" type="search" placeholder="Number, client, title" value=${f.q} onInput=${inputOn(f, setF, 'q')} /><//>
       <${Field} label="Client"><select id="ce-fc" class="inp" value=${f.client} onChange=${inputOn(f, setF, 'client')}><option value="all">All clients</option>${clients.map(function (c) { return html`<option value=${c.id}>${c.name}</option>`; })}</select><//>
       <${Field} label="Status"><select id="ce-fs" class="inp" value=${f.status} onChange=${inputOn(f, setF, 'status')}><option value="all">All statuses</option>${Object.keys(CE_STATUS).map(function (k) { return html`<option value=${k}>${CE_STATUS[k]}</option>`; })}</select><//>
       <label class="row" style="gap: 8px; align-self: end; min-height: 44px; font-size: 14px"><input type="checkbox" checked=${f.all} onChange=${function (e) { setF(Object.assign({}, f, { all: e.target.checked })); }} /> Show earlier iterations</label>
     </section>
+    ${bar}
     ${!list.length ? html`<div class="card empty">${G.data.ces.length ? 'No cost estimate matches.' : 'No cost estimates yet. Start one with New cost estimate.'}</div>`
-      : narrow ? html`<section class="mlist">${list.map(function (c) { var t = ceTotals(c); return html`<article key=${c.id} class="mcard">
+      : narrow ? html`<section class="mlist"><label class="row" style="gap: 8px; font-size: 14px; padding: 0 4px"><input class="ck" type="checkbox" checked=${allOn} onChange=${function () { var o = {}; if (!allOn) list.forEach(function (c) { o[c.id] = true; }); setSel(o); }} /> Select all (${list.length})</label>${list.map(function (c) { var t = ceTotals(c); return html`<article key=${c.id} class=${'mcard' + (sel[c.id] ? ' sel' : '')}>
+          <div class="row" style="justify-content: space-between"><label class="ckwrap"><input class="ck" type="checkbox" aria-label=${'Select ' + ceNumber(c)} checked=${!!sel[c.id]} onChange=${function () { toggle(c.id); }} /></label>${canDel(c) && html`<button class="icon" aria-label=${'Delete ' + ceNumber(c)} onClick=${function (e) { delOne(c, e); }}>${I.trash}</button>`}</div>
           <button class="namebtn" style="all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 2px" onClick=${function () { open(c); }}><span class="mono" style="font-size: 12px">${ceNumber(c)}</span><b>${c.title || '(untitled)'}</b><span class="muted" style="font-size: 13px">${clientName(c.clientId) || '—'}</span></button>
           <div class="mcf"><span class=${'badge ' + ceBadge(c.status)}>${CE_STATUS[c.status || 'draft']}</span><span>${isoToDate(c.date)}</span><span class="amt num">${ceMoney(t.net)}</span></div></article>`; })}</section>`
-      : html`<section class="card" style="overflow-x: auto"><table class="t"><thead><tr><th style="padding: 10px 16px">Number</th><th>Client</th><th>Title</th><th>Date</th><th>Status</th><th>By</th><th class="r">NET</th><th class="r" style="padding-right: 16px">With VAT</th></tr></thead>
-        <tbody>${list.map(function (c) { var t = ceTotals(c); return html`<tr key=${c.id} style="cursor: pointer" onClick=${function () { open(c); }}>
-          <td class="mono" style="padding-left: 16px; white-space: nowrap">${ceNumber(c)}${!f.all && iters(c) > 1 ? html`<div class="muted" style="font-size: 11px; font-family: var(--sans)">${iters(c)} iterations</div>` : ''}</td><td>${clientName(c.clientId) || '—'}</td><td><button class="link" style="text-align: left" onClick=${function (e) { e.stopPropagation(); open(c); }}>${c.title || '(untitled)'}</button><div class="muted" style="font-size: 12px">${[projNumber(byId(G.data.projects, c.projectId)), c.projectName || projectName(c.projectId)].filter(Boolean).join(' · ')}</div></td>
+      : html`<section class="card" style="overflow-x: auto"><table class="t"><thead><tr><th style="padding-left: 16px; width: 36px"><input class="ck" type="checkbox" aria-label="Select all estimates" checked=${allOn} onChange=${function () { var o = {}; if (!allOn) list.forEach(function (c) { o[c.id] = true; }); setSel(o); }} /></th><th style="padding: 10px 12px">Number</th><th>Client</th><th>Title</th><th>Date</th><th>Status</th><th>By</th><th class="r">NET</th><th class="r">With VAT</th><th style="padding-right: 16px"><span class="sr">Actions</span></th></tr></thead>
+        <tbody>${list.map(function (c) { var t = ceTotals(c); return html`<tr key=${c.id} class=${sel[c.id] ? 'sel' : ''} style="cursor: pointer" onClick=${function () { open(c); }}>
+          <td style="padding-left: 16px" onClick=${function (e) { e.stopPropagation(); }}><input class="ck" type="checkbox" aria-label=${'Select ' + ceNumber(c)} checked=${!!sel[c.id]} onChange=${function () { toggle(c.id); }} /></td>
+          <td class="mono" style="white-space: nowrap">${ceNumber(c)}${!f.all && iters(c) > 1 ? html`<div class="muted" style="font-size: 11px; font-family: var(--sans)">${iters(c)} iterations</div>` : ''}</td><td>${clientName(c.clientId) || '—'}</td><td><button class="link" style="text-align: left" onClick=${function (e) { e.stopPropagation(); open(c); }}>${c.title || '(untitled)'}</button><div class="muted" style="font-size: 12px">${[projNumber(byId(G.data.projects, c.projectId)), c.projectName || projectName(c.projectId)].filter(Boolean).join(' · ')}</div></td>
           <td class="num" style="white-space: nowrap">${isoToDate(c.date)}</td><td><span class=${'badge ' + ceBadge(c.status)}>${CE_STATUS[c.status || 'draft']}</span></td><td style="white-space: nowrap">${userName(c.by)}</td>
-          <td class="r num" style="font-weight: 600; white-space: nowrap">${ceMoney(t.net)}</td><td class="r num" style="padding-right: 16px; white-space: nowrap">${c.vat ? ceMoney(t.grand) : '—'}</td></tr>`; })}</tbody></table></section>`}`;
+          <td class="r num" style="font-weight: 600; white-space: nowrap">${ceMoney(t.net)}</td><td class="r num" style="white-space: nowrap">${c.vat ? ceMoney(t.grand) : '—'}</td>
+          <td style="padding-right: 16px; text-align: right">${canDel(c) ? html`<button class="icon" aria-label=${'Delete ' + ceNumber(c)} title="Delete" onClick=${function (e) { delOne(c, e); }}>${I.trash}</button>` : ''}</td></tr>`; })}</tbody></table></section>`}`;
 }
 function ceBadge(s) { return s === 'approved' ? 's4' : s === 'rejected' ? 's5' : s === 'sent' ? 's3' : 's0'; }
 

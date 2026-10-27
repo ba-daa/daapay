@@ -2,7 +2,7 @@
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.5.2';
+const APP_VERSION = '0.5.3';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -402,7 +402,14 @@ async function writeDoc(env, me, b) {
     } else {
       if (!itemVisible(me, Object.assign({ id }, cur), usersById)) fail(404, 'That item no longer exists.');
       const st = cur.status || 0;
-      if ('status' in data && data.status !== st) {
+      if ('status' in data && data.status === 0 && st === 5) {
+        // Resubmitted after a denial: the initiator (or a reviewer) corrected it; it starts again at To review.
+        if (!(cur.by === me.id || top || role === 'am')) deny('Only the person who added it, an account manager or the CEO can send it back for approval.');
+        next.denials = (cur.denials || []).concat([{ reason: cur.denyReason || '', by: cur.deniedBy || '', at: cur.s5At || '', ts: cur.s5Ts || 0, fixedBy: me.id, fixedAt: podgoricaStamp().short, note: String(data.resubmitNote || '').slice(0, 1000) }]).slice(-20);
+        for (const k of ['denyReason', 'deniedBy', 'resubmitNote', 'mail', 'paidMail']) delete next[k];
+        for (let i = 1; i <= 5; i++) { delete next['s' + i + 'By']; delete next['s' + i + 'Ts']; delete next['s' + i + 'At']; }
+        next.status = 0; next.resubmittedAt = podgoricaStamp().short; next.resubmittedBy = me.id;
+      } else if ('status' in data && data.status !== st) {
         const action = ACTION_FOR[data.status];
         if (!action || !can(role, action, st)) deny('Your role cannot move this item to ' + (STATUS[data.status] || 'that status') + '.');
         if (action === 'send' && cur.kind === 'invoice' && !acctOk(next.account)) deny("Add the supplier's bank account before sending to payment.");
@@ -627,11 +634,19 @@ async function notifyNew(env, me, b) {
   if (!env.RESEND_API_KEY) return json({ ok: true, emailed: false });
   const ids = (b.ids || []).slice(0, 50).map(String);
   const items = [];
-  for (const id of ids) { const x = await getDoc(env, 'items', id); if (x && x.by === me.id) items.push(x); }
+  for (const id of ids) { const x = await getDoc(env, 'items', id); if (x && (x.by === me.id || (b.resubmit && x.resubmittedBy === me.id))) items.push(x); }
   if (!items.length) return json({ ok: true, emailed: false });
   const users = (await allDocs(env, 'users')).filter((u) => u.active !== false && u.email && u.id !== me.id);
   const to = new Set(users.filter((u) => isTop(u.role)).map((u) => u.email));
   if (me.role === 'aa') users.filter((u) => u.role === 'am' && (!me.managerId || u.id === me.managerId)).forEach((u) => to.add(u.email));
+  if (b.resubmit) {
+    for (const x of items) { const d = (x.denials || []).slice(-1)[0]; const u = d && users.find((v) => v.id === d.by); if (u) to.add(u.email); }
+    if (!to.size) return json({ ok: true, emailed: false });
+    const x = items[0], d = (x.denials || []).slice(-1)[0] || {};
+    const lines = [nameOf(me) + ' corrected ' + pq(x.pqn) + ' and sent it back for approval.', 'It was denied' + (d.by ? ' by ' + nameOf(users.find((v) => v.id === d.by)) : '') + ': ' + (d.reason || '—')].concat(d.note ? ['What changed: ' + d.note] : []);
+    await sendMail(env, mailOf(env, [...to], 'Resubmitted ' + pq(x.pqn) + ' · ' + x.title + ' · ' + fmt(x.amount) + ' EUR', 'Corrected and sent back for approval', lines, { label: 'Review in DAA Pay', url: appUrl(env) }, [[pq(x.pqn) + ' · ' + KIND[x.kind], x.title + (x.number ? ' · ' + x.number : ''), fmt(x.amount) + ' EUR']])).catch(() => {});
+    return json({ ok: true, emailed: true });
+  }
   if (!to.size) return json({ ok: true, emailed: false });
   const total = items.reduce((a, x) => a + (x.amount || 0), 0);
   const subject = items.length === 1 ? 'New payment request ' + pq(items[0].pqn) + ' · ' + items[0].title + ' · ' + fmt(items[0].amount) + ' EUR' : items.length + ' new payment requests · ' + fmt(total) + ' EUR';
