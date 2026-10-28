@@ -204,6 +204,9 @@ dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break:
 .inp.off { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .ce-tl { justify-content: space-between; flex-wrap: nowrap; }
 .ce-ed { padding-bottom: 40px; }
+.nset th.c, .nset td.c { text-align: center; width: 72px; }
+.nset td { padding-top: 10px; padding-bottom: 10px; }
+.nset input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ink); }
 .ce-bulk { position: sticky; top: 0; z-index: 4; border-color: var(--ink); }
 .flash { animation: flash 1.6s ease-out; }
 @keyframes flash { 0%, 40% { box-shadow: inset 0 0 0 2px var(--ink); } 100% { box-shadow: none; } }
@@ -339,7 +342,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.5.3';
+var APP_VERSION = '0.5.4';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -1037,6 +1040,7 @@ var HELP = [
     'Filter the queue by payment type, status, client, project and dates. Tap a column name (or use Sort on a phone) to sort.',
     'Select several items to approve, send to payment, mark paid, remove or download them together. Download as PDF makes one file with a cover page per item followed by its documents.'] },
   { id: 'emails', title: 'Emails and notifications', text: [
+    'Choose what reaches you: Profile settings → Notifications. Turn each type on or off in the app (the bell) and by email. Sign-in and account emails, and Critical announcements, always come.',
     'The bell shows what needs you. DAA Pay also emails: reviewers when new requests arrive, the office manager when something is sent to payment, the initiator when it is denied or paid, and everyone a summary every Monday.',
     'New people get a welcome or invitation email; people who ask for access get a confirmation and an email when they are approved.'] },
   { id: 'account', title: 'Your account and security', text: [
@@ -1293,6 +1297,48 @@ function Header() {
   </div>`}`;
 }
 function signOut() { window.daa.post('/api/logout').catch(function () {}); window.daa.stop(); COLS.forEach(function (c) { G.data[c] = []; }); G.me = null; G.memId = null; sessionSet(null); setUi({ nav: false, menu: false, bell: false, profile: false, open: null, modal: null, checked: {}, tab: 'queue' }); }
+// ---------- personal notification settings
+var NOTIF_TYPES = [
+  { k: 'review', label: 'New and corrected requests to review', who: function (r) { return isTop(r) || r === 'am'; }, app: 1, email: 1 },
+  { k: 'approved', label: 'My request was approved', who: function () { return true; }, app: 1, email: 0 },
+  { k: 'denied', label: 'My request was denied', who: function () { return true; }, app: 1, email: 1 },
+  { k: 'payment', label: 'Payment orders (sent to payment)', who: function (r) { return r === 'om'; }, app: 1, email: 1, warn: 'You execute these payments. With both off, you only see them in the queue.' },
+  { k: 'paid', label: 'My request was paid', who: function () { return true; }, app: 1, email: 1 },
+  { k: 'access', label: 'Access requests to approve', who: function (r) { return isTop(r) || r === 'am'; }, app: 1, email: 1 },
+  { k: 'news', label: 'Announcements (FYI and Important)', who: function () { return true; }, app: 1, email: 1, note: 'Critical announcements always reach you.' },
+  { k: 'bugs', label: 'Bug reports', who: function (r) { return r === 'sa'; }, app: 1, email: 1 },
+  { k: 'weekly', label: 'Monday summary', who: function () { return true; }, app: 0, email: 1 }
+];
+function wantsN(u, kind, ch) { return !(u && u.notify && u.notify[kind] && u.notify[kind][ch] === false); }
+function notifKind(n) {
+  if (n.kind) return n.kind;
+  if (n.news) return /^Critical:/.test(n.text || '') ? 'critical' : 'news';
+  if (n.bug) return 'bugs'; if (n.reg) return 'access';
+  if (n.to === 'role:review' || /\(your assistant\) added|sent it back for approval|is back in To review/.test(n.text || '')) return 'review';
+  if (n.to === 'role:om' || /was sent to payment/.test(n.text || '')) return 'payment';
+  if (/was denied by/.test(n.text || '')) return 'denied';
+  if (/ is paid\.$/.test(n.text || '')) return 'paid';
+  if (/ was approved\.$/.test(n.text || '')) return 'approved';
+  return 'other';
+}
+function NotifSettings() {
+  var me = G.me, types = NOTIF_TYPES.filter(function (t) { return t.who(me.role); });
+  function setPref(k, ch, on) {
+    var n = JSON.parse(JSON.stringify(me.notify || {})); n[k] = n[k] || {};
+    if (on) delete n[k][ch]; else n[k][ch] = false;
+    if (!Object.keys(n[k]).length) delete n[k];
+    G.me = Object.assign({}, G.me, { notify: n }); redraw();
+    patch('users', me.id, { notify: n }).then(function (r) { if (r) toast('Notification settings saved.'); });
+  }
+  return html`<div class="mbody" style="border-top: 1px solid var(--line-2); gap: 10px">
+    <div><b>Notifications</b><div class="muted" style="font-size: 13px">Choose what reaches you in the app (the bell) and by email. Sign-in, password and account emails always come.</div></div>
+    <table class="t nset"><thead><tr><th style="padding-left: 0">What</th><th class="c">In app</th><th class="c">Email</th></tr></thead>
+      <tbody>${types.map(function (t) { var a = wantsN(me, t.k, 'app'), e = wantsN(me, t.k, 'email'); return html`<tr key=${t.k}>
+        <td style="padding-left: 0">${t.label}${t.note ? html`<div class="muted" style="font-size: 12px">${t.note}</div>` : ''}${t.warn && !a && !e ? html`<div style="font-size: 12px; color: var(--danger)">${t.warn}</div>` : ''}</td>
+        <td class="c">${t.app ? html`<input type="checkbox" aria-label=${t.label + ' in the app'} checked=${a} onChange=${function (ev) { setPref(t.k, 'app', ev.target.checked); }} />` : html`<span class="muted">—</span>`}</td>
+        <td class="c">${t.email ? html`<input type="checkbox" aria-label=${t.label + ' by email'} checked=${e} onChange=${function (ev) { setPref(t.k, 'email', ev.target.checked); }} />` : html`<span class="muted">—</span>`}</td></tr>`; })}</tbody></table>
+  </div>`;
+}
 function myNotifs() {
   var me = G.me, role = me.role, top = isTop(role);
   return G.data.notifs.filter(function (n) {
@@ -1300,7 +1346,7 @@ function myNotifs() {
     if (n.to === 'role:' + role) return true;
     if (n.to === 'role:review') return top && n.from !== me.id;
     return false;
-  }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  }).filter(function (n) { var k = notifKind(n); return k === 'critical' || k === 'other' || wantsN(me, k, 'app'); }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
 }
 
 // ================= QUEUE =================
@@ -1470,9 +1516,9 @@ async function advance(x, status) {
   if (!ok) return false;
   var t = pqNo(x.pqn) + ' · ' + x.title;
   logEv('payment', STATUS[status] + ': ' + t, x.id);
-  if (status === 3) notify([{ to: 'role:om', itemId: x.id, from: me.id, text: t + ' was sent to payment by ' + nameOf(me) + '.' }]);
-  if (status === 4 && x.by && x.by !== me.id) notify([{ to: x.by, itemId: x.id, from: me.id, text: t + ' is paid.' }]);
-  if (status === 1 && x.by && x.by !== me.id) notify([{ to: x.by, itemId: x.id, from: me.id, text: t + ' was approved.' }]);
+  if (status === 3) notify([{ kind: 'payment', to: 'role:om', itemId: x.id, from: me.id, text: t + ' was sent to payment by ' + nameOf(me) + '.' }]);
+  if (status === 4 && x.by && x.by !== me.id) notify([{ kind: 'paid', to: x.by, itemId: x.id, from: me.id, text: t + ' is paid.' }]);
+  if (status === 1 && x.by && x.by !== me.id) notify([{ kind: 'approved', to: x.by, itemId: x.id, from: me.id, text: t + ' was approved.' }]);
   return true;
 }
 
@@ -1485,6 +1531,7 @@ async function mailPaid(list) {
   list.forEach(function (x) {
     if (!x.by) { noInit.push(x.id); return; }
     if (x.by === me.id) { mark([x.id], { ok: true, at: at, self: true }); return; }
+    var iu = byId(G.data.users, x.by); if (iu && !wantsN(iu, 'paid', 'email')) { mark([x.id], { ok: true, at: at, off: true }); return; }
     (groups[x.by] = groups[x.by] || []).push(x);
   });
   if (noInit.length) mark(noInit, { ok: false, at: at, err: 'No initiator is set (choose Added by)' });
@@ -1511,7 +1558,7 @@ async function mailPaid(list) {
       items.map(function (x) { return '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #111;margin:0 0 16px;min-width:320px">' + rowsOf(x).map(function (r, j) { return '<tr' + (j === 0 ? ' style="background:#111;color:#fff"' : '') + '><th align="left" style="border-bottom:1px solid #ddd;font-weight:600;padding-right:16px">' + esc(r[0]) + '</th><td style="border-bottom:1px solid #ddd' + (r[0] === 'Status' || r[0] === 'Amount' ? ';font-weight:700' : '') + '">' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>'; }).join('') +
       (items.length > 1 ? '<p><b>Total paid: ' + fmt(total) + ' EUR</b></p>' : '') + '<p><a href="' + APP_URL + '">Open the payment queue</a></p></div>';
     try {
-      await G.mcp.callTool('Gmail', 'send_message', { to: [u.email], subject: subject, body: text, htmlBody: htmlBody }, { cache: false });
+      await G.mcp.callTool('Gmail', 'send_message', { kind: 'paid', to: [u.email], subject: subject, body: text, htmlBody: htmlBody }, { cache: false });
       mark(ids, { ok: true, at: at, to: [u.email], by: me.id }); sent.push(nameOf(u));
       items.forEach(function (x) { logEv('email', 'Paid confirmation sent to ' + u.email + ' for ' + pqNo(x.pqn), x.id); });
     } catch (e) { mark(ids, { ok: false, at: at, err: mailWhy(e) }); failed.push(nameOf(u) + ' (' + mailWhy(e) + ')'); }
@@ -1550,7 +1597,9 @@ function paymentLines(x) {
 async function mailPayment(list) {
   var me = G.me, ids = list.map(function (x) { return x.id; });
   var mark = function (m) { ids.forEach(function (id) { patch('items', id, { mail: m }); }); };
-  var oms = G.data.users.filter(function (u) { return u.role === 'om' && u.active !== false && u.email; });
+  var allOms = G.data.users.filter(function (u) { return u.role === 'om' && u.active !== false && u.email; });
+  var oms = allOms.filter(function (u) { return wantsN(u, 'payment', 'email'); });
+  if (allOms.length && !oms.length) { mark({ ok: true, at: stamp(), off: true, to: [] }); toast('Sent to payment. ' + allOms.map(nameOf).join(', ') + ' turned off payment emails, so they see it in DAA Pay only.'); return; }
   if (!oms.length) { mark({ ok: false, at: stamp(), err: 'No office manager account exists' }); toast('Sent to payment. No office manager account exists yet, so no email went out.', true); return; }
   if (!G.mcp) { mark({ ok: false, at: stamp(), err: 'Gmail is not available in this view' }); toast('Sent to payment, but no email went out: Gmail is not available here. Connect Gmail in claude.ai and allow it for this app, then use Retry email.', true); return; }
   setUi({ busy: 'mail' });
@@ -1564,7 +1613,7 @@ async function mailPayment(list) {
     '<p>Hello,</p><p>' + esc(nameOf(me)) + ' sent ' + (items.length === 1 ? 'this payment' : 'these ' + items.length + ' payments') + ' to payment. Please execute ' + (items.length === 1 ? 'it' : 'them') + ' and mark ' + (items.length === 1 ? 'it' : 'them') + ' as <b>Paid</b> in the payment queue.</p>' +
     items.map(function (x) { return '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #111;margin:0 0 16px;min-width:320px">' + paymentLines(x).map(function (r, i) { return '<tr' + (i === 0 ? ' style="background:#111;color:#fff"' : '') + '><th align="left" style="border-bottom:1px solid #ddd;font-weight:600;padding-right:16px">' + esc(r[0]) + '</th><td style="border-bottom:1px solid #ddd' + (r[0] === 'Amount' || r[0] === 'Bank account' ? ';font-weight:700' : '') + '">' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>'; }).join('') +
     '<p><b>Total: ' + fmt(total) + ' EUR</b></p><p>The attached PDF has each payment with its invoice and documents.</p><p><a href="' + APP_URL + '">Open the payment queue</a></p></div>';
-  var input = { to: oms.map(function (u) { return u.email; }), subject: subject, body: text, htmlBody: htmlBody };
+  var input = { kind: 'payment', to: oms.map(function (u) { return u.email; }), subject: subject, body: text, htmlBody: htmlBody };
   try {
     try { var pdf = await makePdf(items); if (pdf.bytes.length < 18000000) input.attachments = [{ filename: (items.length === 1 ? pqNo(items[0].pqn) : 'payment-order-' + todayIso()) + '.pdf', mimeType: 'application/pdf', content: b64(pdf.bytes) }]; } catch (e) {}
     await G.mcp.callTool('Gmail', 'send_message', input, { cache: false });
@@ -1594,7 +1643,8 @@ function Drawer() {
     if (!denyText.trim()) return;
     var ok = await patch('items', x.id, { status: 5, denyReason: denyText.trim(), deniedBy: me.id, s5At: stamp(), s5Ts: Date.now() });
     if (ok) logEv('payment', 'Denied: ' + pqNo(x.pqn) + ' · ' + x.title + ' (' + denyText.trim() + ')', x.id);
-    if (ok && x.by) notify([{ to: x.by, itemId: x.id, from: me.id, text: pqNo(x.pqn) + ' · ' + x.title + ' was denied by ' + nameOf(me) + ': ' + denyText.trim() }]);
+    if (ok && x.by && x.by !== me.id) window.daa.post('/api/notify/denied', { id: x.id }).catch(function () {});
+    if (ok && x.by) notify([{ kind: 'denied', to: x.by, itemId: x.id, from: me.id, text: pqNo(x.pqn) + ' · ' + x.title + ' was denied by ' + nameOf(me) + ': ' + denyText.trim() }]);
     setDeny(''); setUi({ denyOpen: false });
   }
   return html`<div class="scrim" onClick=${function (e) { if (e.target === e.currentTarget) close(); }}>
@@ -1634,10 +1684,10 @@ function Drawer() {
             : html`<ol class="steps" aria-label="Status">${STATUS.slice(0, 5).map(function (l, i) { return html`<li class=${(i <= st ? 'done' : '') + (i === st ? ' cur' : '')}><i></i><span>${l}</span></li>`; })}</ol><div class="stepnow">Step ${st + 1} of 5 · <b>${STATUS[st]}</b></div>`}
           ${st === 3 && html`<div style="font-size: 13px">Sent to ${G.data.users.filter(function (u) { return u.role === 'om'; }).map(nameOf).join(', ') || 'the office manager'} for payment.</div>`}
           ${st === 4 && x.paidMail && (x.paidMail.ok
-            ? html`<div class="alert i" style="font-size: 13px">${x.paidMail.self ? 'Marked paid by the initiator, so no email was needed.' : 'Payment confirmation emailed ' + x.paidMail.at + ' to ' + (x.paidMail.to || []).join(', ') + '.'}</div>`
+            ? html`<div class="alert i" style="font-size: 13px">${x.paidMail.self ? 'Marked paid by the initiator, so no email was needed.' : x.paidMail.off ? userName(x.by) + ' turned off paid emails; they see it in DAA Pay.' : 'Payment confirmation emailed ' + x.paidMail.at + ' to ' + (x.paidMail.to || []).join(', ') + '.'}</div>`
             : html`<div class="alert e row" style="font-size: 13px"><span style="flex-grow: 1">Payment confirmation not sent (${x.paidMail.at}): ${x.paidMail.err}.</span>${(top || role === 'om') && html`<button class="btn sm" disabled=${G.ui.busy === 'mail'} onClick=${function () { mailPaid([x]); }}>${G.ui.busy === 'mail' ? 'Sending…' : 'Retry email'}</button>`}</div>`)}
           ${st >= 3 && st !== 5 && x.mail && (x.mail.ok
-            ? html`<div class="alert i" style="font-size: 13px">Payment email sent ${x.mail.at} to ${(x.mail.to || []).join(', ')}.</div>`
+            ? html`<div class="alert i" style="font-size: 13px">${x.mail.off ? 'No payment email: the office manager turned these emails off and sees the payment in DAA Pay.' : 'Payment email sent ' + x.mail.at + ' to ' + (x.mail.to || []).join(', ') + '.'}</div>`
             : html`<div class="alert e row" style="font-size: 13px"><span style="flex-grow: 1">Payment email not sent (${x.mail.at}): ${x.mail.err}.</span>${top && html`<button class="btn sm" disabled=${G.ui.busy === 'mail'} onClick=${function () { mailPayment([x]); }}>${G.ui.busy === 'mail' ? 'Sending…' : 'Retry email'}</button>`}</div>`)}
         </div>
 
@@ -1693,7 +1743,7 @@ function FixDenied(p) {
       if (await patch('items', x.id, pt)) {
         logEv('edit', (resubmit ? 'Corrected and sent back for approval: ' : 'Corrected: ') + pqNo(x.pqn) + (c.length ? ' (' + c.join(', ') + ')' : '') + (f.note.trim() ? ' · ' + f.note.trim() : ''), x.id);
         if (resubmit) {
-          notify([{ to: 'role:review', from: me.id, itemId: x.id, text: nameOf(me) + ' corrected ' + pqNo(x.pqn) + ' · ' + (pt.title || x.title) + ' and sent it back for approval.' }].concat(x.deniedBy && x.deniedBy !== me.id ? [{ to: x.deniedBy, from: me.id, itemId: x.id, text: pqNo(x.pqn) + ', which you denied, was corrected by ' + nameOf(me) + ' and is back in To review.' }] : []));
+          notify([{ kind: 'review', to: 'role:review', from: me.id, itemId: x.id, text: nameOf(me) + ' corrected ' + pqNo(x.pqn) + ' · ' + (pt.title || x.title) + ' and sent it back for approval.' }].concat(x.deniedBy && x.deniedBy !== me.id ? [{ kind: 'review', to: x.deniedBy, from: me.id, itemId: x.id, text: pqNo(x.pqn) + ', which you denied, was corrected by ' + nameOf(me) + ' and is back in To review.' }] : []));
           window.daa.post('/api/notify/new', { ids: [x.id], resubmit: true }).catch(function () {});
           toast(pqNo(x.pqn) + ' is back in To review.');
         } else toast('Changes saved. Send it back for approval when ready.');
@@ -2020,10 +2070,10 @@ function AddModal() {
       var ids = [];
       for (var c = 0; c < created.length; c++) { var id = uid('i'); ids.push(id); await put('items', id, Object.assign(created[c], { pqn: pq + c })); }
       window.daa.post('/api/notify/new', { ids: ids }).catch(function () {});
-      notify(created.map(function (it, n) { return { to: 'role:review', from: me.id, itemId: ids[n], text: nameOf(me) + ' added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; }));
+      notify(created.map(function (it, n) { return { kind: 'review', to: 'role:review', from: me.id, itemId: ids[n], text: nameOf(me) + ' added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; }));
       if (me.role === 'aa') {
         var mgrs = me.managerId ? [me.managerId] : G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; }).map(function (u) { return u.id; });
-        mgrs.forEach(function (mid) { notify(created.map(function (it, n) { return { to: mid, from: me.id, itemId: ids[n], text: nameOf(me) + ' (your assistant) added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; })); });
+        mgrs.forEach(function (mid) { notify(created.map(function (it, n) { return { kind: 'review', to: mid, from: me.id, itemId: ids[n], text: nameOf(me) + ' (your assistant) added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; })); });
       }
       created.forEach(function (it, n) { logEv('payment', 'Added ' + pqNo(pq + n) + ' · ' + it.title, ids[n]); });
       toast('Added ' + created.length + (created.length === 1 ? ' item' : ' items') + ' to the payment queue.');
@@ -2339,7 +2389,9 @@ function Profile() {
         ${has2fa(me) && !needs2fa(me) && html`<button class="btn q sm" onClick=${function () { window.daa.post('/api/totp/disable').then(function () { toast('Two-step sign-in is off.'); }, function (e) { toast(e.message, true); }); }}>Turn off</button>`}
       </div>
       ${setup && !has2fa(me) && html`<${TotpSetup} user=${me} onDone=${function () { setSetup(false); toast('Two-step sign-in is on.'); }} onCancel=${function () { setSetup(false); }} />`}
-    </div></div></div>`;
+    </div>
+    <${NotifSettings} />
+    </div></div>`;
 }
 
 // ================= PRIVACY =================

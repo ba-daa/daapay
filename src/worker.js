@@ -2,7 +2,7 @@
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.5.3';
+const APP_VERSION = '0.5.4';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -172,6 +172,9 @@ function itemVisible(me, x, usersById) {
   if (me.role === 'am') { const a = usersById[x.by]; return !!a && a.role === 'aa' && (!a.managerId || a.managerId === me.id); }
   return false;
 }
+// Personal notification settings: user.notify = { kind: { app: false, email: false } }; anything not set is on.
+const NOTIFY_KINDS = ['review', 'approved', 'denied', 'payment', 'paid', 'access', 'news', 'bugs', 'weekly'];
+const wants = (u, kind, ch) => !(u && u.notify && u.notify[kind] && u.notify[kind][ch || 'email'] === false);
 function notifVisible(me, n) {
   if (n.to === me.id || n.to === 'role:' + me.role) return true;
   if (n.to === 'role:review') return isTop(me.role) && n.from !== me.id;
@@ -220,6 +223,7 @@ async function api(req, env, url, ctx) {
   if (p === '/api/bug' && m === 'POST') return reportBug(req, env, me, await body(req));
   if (p === '/api/announce' && m === 'POST') return announce(env, me, await body(req));
   if (p === '/api/numbers/fill' && m === 'POST') return fillNumbers(env);
+  if (p === '/api/notify/denied' && m === 'POST') return notifyDenied(env, me, await body(req));
   if (p === '/api/costs' && m === 'GET') return projectCosts(env, me);
   if (p === '/api/regs/approve' && m === 'POST') return approveReg(env, me, await body(req));
   if (p === '/api/backup' && m === 'GET') return backupApi(env, me);
@@ -319,7 +323,7 @@ async function register(req, env) {
   if (env.RESEND_API_KEY) {
     await sendMail(env, mailOf(env, [email], 'We received your DAA Pay access request', 'Welcome to DAA Pay, ' + t('first'),
       ['Thank you for requesting access. ' + nameOf(apU) + ' (' + ap + ') will review it.', 'You get another email as soon as it is approved. Then you sign in with the email and password you just chose.'])).catch(() => {});
-    await sendMail(env, mailOf(env, [apU.email], 'New DAA Pay access request: ' + nm, 'New access request',
+    if (wants(apU, 'access')) await sendMail(env, mailOf(env, [apU.email], 'New DAA Pay access request: ' + nm, 'New access request',
       [nm + ' (' + t('position') + ', ' + email + ') asked for access and named you to confirm it.', 'Open Users & roles in DAA Pay to approve the request with a role, or deny it.'], { label: 'Review the request', url: appUrl(env) })).catch(() => {});
   }
   return json({ ok: true, approver: ap });
@@ -378,7 +382,13 @@ async function writeDoc(env, me, b) {
     if (op === 'delete') deny();
     if (!cur) deny('Create accounts from Users & roles.');
     const keys = Object.keys(data);
-    const selfKeys = ['first', 'last', 'position'];
+    const selfKeys = ['first', 'last', 'position', 'notify'];
+    if ('notify' in data) {
+      if (me.id !== id) deny('Only the person themselves can change their notification settings.');
+      const clean = {};
+      for (const k of NOTIFY_KINDS) { const v = data.notify && data.notify[k]; if (v && typeof v === 'object') { clean[k] = {}; if (v.app === false) clean[k].app = false; if (v.email === false) clean[k].email = false; } }
+      data.notify = clean;
+    }
     const topKeys = ['role', 'active', 'managerId', 'totp'];
     if (me.id === id && keys.every((k) => selfKeys.includes(k))) { /* own profile */ }
     else if (top && me.id !== id && keys.every((k) => topKeys.concat(selfKeys).includes(k))) {
@@ -386,6 +396,7 @@ async function writeDoc(env, me, b) {
       if (data.role && !ROLE[data.role]) fail(400, 'Unknown role.');
     } else deny();
     next = merge(cur, data);
+    if ('notify' in data) next.notify = data.notify;
     if (data.totp) next.totp = { on: false };
   } else if (col === 'regs') {
     if (op !== 'delete' || !(top || role === 'am')) deny();
@@ -636,7 +647,7 @@ async function notifyNew(env, me, b) {
   const items = [];
   for (const id of ids) { const x = await getDoc(env, 'items', id); if (x && (x.by === me.id || (b.resubmit && x.resubmittedBy === me.id))) items.push(x); }
   if (!items.length) return json({ ok: true, emailed: false });
-  const users = (await allDocs(env, 'users')).filter((u) => u.active !== false && u.email && u.id !== me.id);
+  const users = (await allDocs(env, 'users')).filter((u) => u.active !== false && u.email && u.id !== me.id && wants(u, 'review'));
   const to = new Set(users.filter((u) => isTop(u.role)).map((u) => u.email));
   if (me.role === 'aa') users.filter((u) => u.role === 'am' && (!me.managerId || u.id === me.managerId)).forEach((u) => to.add(u.email));
   if (b.resubmit) {
@@ -665,7 +676,7 @@ async function reportBug(req, env, me, b) {
     context: { version: APP_VERSION, page: t('page', 200), screen: t('screen', 40), agent: String(req.headers.get('user-agent') || '').slice(0, 300) } };
   await putDoc(env, 'bugs', id, bug);
   await logEvent(env, me.id, 'data', 'Reported a bug: ' + bug.what.slice(0, 80));
-  const admins = (await allDocs(env, 'users')).filter((u) => u.role === 'sa' && u.active !== false && u.email).map((u) => u.email);
+  const admins = (await allDocs(env, 'users')).filter((u) => u.role === 'sa' && u.active !== false && u.email && wants(u, 'bugs')).map((u) => u.email);
   for (const u of await allDocs(env, 'users')) if (u.role === 'sa' && u.active !== false) await putDoc(env, 'notifs', rid('n'), { to: u.id, text: nameOf(me) + ' reported a bug: ' + bug.what.slice(0, 100), ts, time: bug.time, readBy: {}, bug: id });
   if (env.RESEND_API_KEY && admins.length) await sendMail(env, mailOf(env, admins, 'DAA Pay bug report (' + bug.severity + '): ' + bug.what.slice(0, 60), 'New bug report',
     ['From ' + nameOf(me) + ' (' + ROLE[me.role] + '), ' + bug.time + '.'], { label: 'Open bug reports', url: appUrl(env) },
@@ -673,6 +684,17 @@ async function reportBug(req, env, me, b) {
   return json({ ok: true, id });
 }
 
+// Email the initiator that their request was denied, with the reason (unless they turned it off).
+async function notifyDenied(env, me, b) {
+  const x = await getDoc(env, 'items', String(b.id || ''));
+  if (!x || x.status !== 5 || x.deniedBy !== me.id || !x.by || x.by === me.id) return json({ ok: true, emailed: false });
+  const u = await getDoc(env, 'users', x.by);
+  if (!env.RESEND_API_KEY || !u || u.active === false || !u.email || !wants(u, 'denied')) return json({ ok: true, emailed: false });
+  await sendMail(env, mailOf(env, [u.email], 'Denied: ' + pq(x.pqn) + ' · ' + x.title, 'Your payment request was denied',
+    [nameOf(me) + ' denied ' + pq(x.pqn) + ' · ' + x.title + ' (' + fmt(x.amount) + ' EUR).', 'Reason: ' + (x.denyReason || '—'), 'Open it in DAA Pay, choose Correct this request, fix what is asked and send it back for approval.'],
+    { label: 'Open DAA Pay', url: appUrl(env) })).catch(() => {});
+  return json({ ok: true, emailed: true });
+}
 // Client identifiers (01, 02 …) and project numbers per client (P001-01/26, P002-01/26 …).
 const yy = (ms) => podgoricaStamp(ms).date.slice(8, 10);
 async function numberDoc(env, col, id, cur, next) {
@@ -732,7 +754,7 @@ async function announce(env, me, b) {
   const lines = text ? text.split(/\n{2,}/) : [];
   lines.push('From ' + nameOf(me) + ', ' + ROLE[me.role] + (until ? '. Valid until ' + until.split('-').reverse().join('.') + '.' : '.'));
   for (const u of users) {
-    if (!u.email) continue;
+    if (!u.email || (level !== 'critical' && !wants(u, 'news'))) continue;
     try { await sendMail(env, mailOf(env, [u.email], '[' + L.label + '] ' + title, title, lines, { label: 'Open DAA Pay', url: appUrl(env) }, null, L)); emailed++; }
     catch (e) { failed++; }
   }
@@ -766,8 +788,9 @@ async function sendMailApi(env, me, b) {
   if (!(isTop(me.role) || me.role === 'om')) fail(403, 'Your role cannot send these emails.');
   const users = await allDocs(env, 'users');
   const ok = new Set(users.filter((u) => u.active !== false).map((u) => (u.email || '').toLowerCase()));
-  const to = (b.to || []).map((x) => String(x).toLowerCase());
+  let to = (b.to || []).map((x) => String(x).toLowerCase());
   if (!to.length || to.some((x) => !ok.has(x))) fail(400, 'Emails can only go to people with an active DAA Pay account.');
+  if (NOTIFY_KINDS.includes(b.kind)) { const off = new Set(users.filter((u) => !wants(u, b.kind)).map((u) => (u.email || '').toLowerCase())); to = to.filter((x) => !off.has(x)); if (!to.length) return json({ ok: true, skipped: true }); }
   const attachments = (b.attachments || []).slice(0, 3).map((a) => ({ filename: String(a.filename || 'file.pdf').slice(0, 120), content: String(a.content || '') }));
   if (attachments.reduce((n, a) => n + a.content.length, 0) > 25e6) fail(413, 'The attachment is too large to email.');
   await sendMail(env, { to, subject: String(b.subject || '').slice(0, 300), text: String(b.body || ''), html: String(b.htmlBody || ''), attachments });
@@ -845,6 +868,6 @@ async function weeklyReport(env) {
   const text = 'DAA Pay · weekly report · ' + today + '\n\nStill to pay: ' + fmt(toPay) + ' EUR across ' + open.length + ' items.\n\n' +
     rowsByStatus.map((r) => r[0] + ': ' + r[1] + ' (' + fmt(r[2]) + ' EUR)').join('\n') + '\n\nNeeds attention:\n' +
     attention.map((r) => '- ' + r[0] + ': ' + (r[1].length ? r[1].map(line).join('; ') : 'none')).join('\n') + '\n\n' + appUrl(env) + '\n';
-  const to = users.filter((u) => u.active !== false && u.email).map((u) => u.email);
+  const to = users.filter((u) => u.active !== false && u.email && wants(u, 'weekly')).map((u) => u.email);
   if (to.length) await sendMail(env, { to, subject: 'DAA Pay · weekly report · ' + today, text, html });
 }
