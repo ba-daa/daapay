@@ -12,4 +12,4 @@ Files in `public/vendor/` and `public/static/` are unmodified copies of these pa
 | `qrcode-generator-1.4.4.js` | qrcode-generator | 1.4.4 | MIT |
 | `IBMPlexSans-*.woff` | @ibm/plex (IBM Plex Sans) | 1.1.0 | SIL Open Font License 1.1 |
 
-The DAA logo (`public/static/daa-logo.png` and the icons made from it) belongs to DAA.
+The DAA logo (`public/static/daa-logo.png`) and the DAA Pay icon (`public/static/daa-pay-icon-source.svg` and the icons and favicon made from it) belong to DAA.
