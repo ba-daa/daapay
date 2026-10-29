@@ -1,8 +1,9 @@
+import { vapidKeys, sendPush } from './push.js';
 // DAA Pay — Cloudflare Worker: API, sign-in, role rules, files, email, weekly report, backups.
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.5.4';
+const APP_VERSION = '0.6.0';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -174,6 +175,51 @@ function itemVisible(me, x, usersById) {
 }
 // Personal notification settings: user.notify = { kind: { app: false, email: false } }; anything not set is on.
 const NOTIFY_KINDS = ['review', 'approved', 'denied', 'payment', 'paid', 'access', 'news', 'bugs', 'weekly'];
+// ---------------------------------------------------------------- push notifications (installed app)
+async function pushSubscribe(env, me, b, req) {
+  const s = b.subscription || {}, k = s.keys || {};
+  if (!/^https:\/\//.test(s.endpoint || '') || !k.p256dh || !k.auth) fail(400, 'That device could not be registered for push.');
+  const id = b64id(s.endpoint);
+  await putDoc(env, 'pushsub', id, { userId: me.id, endpoint: s.endpoint, p256dh: k.p256dh, auth: k.auth, agent: String(req.headers.get('user-agent') || '').slice(0, 200), created: podgoricaStamp().short });
+  return json({ ok: true });
+}
+async function pushUnsubscribe(env, me, b) {
+  const id = b64id(String(b.endpoint || '')), cur = await getDoc(env, 'pushsub', id);
+  if (cur && cur.userId === me.id) await delDoc(env, 'pushsub', id);
+  return json({ ok: true });
+}
+function b64id(endpoint) { let h = 0; for (let i = 0; i < endpoint.length; i++) h = (h * 31 + endpoint.charCodeAt(i)) >>> 0; return 'ps' + h.toString(36) + endpoint.length.toString(36); }
+async function pushTo(env, users, message) {
+  const ids = new Set(users.map((u) => u.id)), subs = (await allDocs(env, 'pushsub')).filter((s) => ids.has(s.userId));
+  let sent = 0;
+  for (const s of subs) {
+    try { const st = await sendPush(env, s, message, 'mailto:' + ((env.MAIL_FROM || '').match(/<([^>]+)>/) || [0, 'pay@daa.co.me'])[1]); if (st === 404 || st === 410) await delDoc(env, 'pushsub', s.id); else if (st < 300) sent++; }
+    catch (e) { /* one device failing must not stop the others */ }
+  }
+  return sent;
+}
+function notifKindOf(n) {
+  if (n.kind) return n.kind;
+  if (n.news) return /^Critical:/.test(n.text || '') ? 'critical' : 'news';
+  if (n.bug) return 'bugs'; if (n.reg) return 'access';
+  if (n.to === 'role:review' || /\(your assistant\) added|sent it back for approval|is back in To review/.test(n.text || '')) return 'review';
+  if (n.to === 'role:om' || /was sent to payment/.test(n.text || '')) return 'payment';
+  if (/was denied by/.test(n.text || '')) return 'denied';
+  if (/ is paid\.$/.test(n.text || '')) return 'paid';
+  if (/ was approved\.$/.test(n.text || '')) return 'approved';
+  return 'other';
+}
+const PUSH_TITLE = { review: 'To review', approved: 'Approved', denied: 'Denied', payment: 'Payment order', paid: 'Paid', access: 'Access request', news: 'Announcement', critical: 'Critical announcement', bugs: 'Bug report', other: 'DAA Pay' };
+// Push a bell notification to the devices of everyone it is meant for (respecting their settings).
+async function pushNotif(env, n) {
+  const users = (await allDocs(env, 'users')).filter((u) => u.active !== false);
+  let to = n.to === 'role:review' ? users.filter((u) => isTop(u.role) && u.id !== n.from) : String(n.to || '').startsWith('role:') ? users.filter((u) => u.role === n.to.slice(5)) : users.filter((u) => u.id === n.to);
+  const kind = notifKindOf(n);
+  if (kind !== 'critical') to = to.filter((u) => wants(u, kind, 'push'));
+  if (!to.length) return 0;
+  const url = n.itemId ? '/?open=' + encodeURIComponent(n.itemId) : (n.reg || n.bug) ? '/?tab=users' : '/';
+  return pushTo(env, to, { title: 'DAA Pay · ' + (PUSH_TITLE[kind] || 'DAA Pay'), body: String(n.text || '').slice(0, 240), url, tag: n.id || '', urgent: kind === 'critical' || kind === 'payment' });
+}
 const wants = (u, kind, ch) => !(u && u.notify && u.notify[kind] && u.notify[kind][ch || 'email'] === false);
 function notifVisible(me, n) {
   if (n.to === me.id || n.to === 'role:' + me.role) return true;
@@ -210,7 +256,11 @@ async function api(req, env, url, ctx) {
 
   const s = await requireUser(req, env), me = s.user;
   if (p === '/api/sync' && m === 'GET') return sync(env, me, Number(url.searchParams.get('since') || 0));
-  if (p === '/api/doc' && m === 'POST') return writeDoc(env, me, await body(req));
+  if (p === '/api/doc' && m === 'POST') return writeDoc(env, me, await body(req), ctx);
+  if (p === '/api/push/key' && m === 'GET') return json({ key: (await vapidKeys(env)).publicKey });
+  if (p === '/api/push/subscribe' && m === 'POST') return pushSubscribe(env, me, await body(req), req);
+  if (p === '/api/push/unsubscribe' && m === 'POST') return pushUnsubscribe(env, me, await body(req));
+  if (p === '/api/push/test' && m === 'POST') { const n = await pushTo(env, [me], { title: 'DAA Pay', body: 'Push notifications work on this device.', url: '/', tag: 'test' }); return json({ ok: true, sent: n }); }
   if (p === '/api/files' && m === 'POST') return upload(req, env, me);
   if (p === '/api/mail' && m === 'POST') return sendMailApi(env, me, await body(req));
   if (p === '/api/password' && m === 'POST') return changePassword(env, me, await body(req));
@@ -318,7 +368,8 @@ async function register(req, env) {
   if (!apU) fail(400, 'That address is not a CEO or account manager here. Ask them for the right one.');
   const ts = now(), nm = t('first') + ' ' + t('last');
   await putDoc(env, 'regs', rid('r'), { first: t('first'), last: t('last'), position: t('position'), email, approver: ap, approverId: apU.id, role: 'aa', pw: await hashPw(String(b.pass)), time: podgoricaStamp(ts).short, ts });
-  await putDoc(env, 'notifs', rid('n'), { to: apU.id, reg: true, text: nm + ' (' + t('position') + ') requested access.', ts, time: podgoricaStamp(ts).short, readBy: {} });
+  const regN = { to: apU.id, reg: true, text: nm + ' (' + t('position') + ') requested access.', ts, time: podgoricaStamp(ts).short, readBy: {} };
+  await putDoc(env, 'notifs', rid('n'), regN); await pushNotif(env, regN).catch(() => {});
   if (apU.role !== 'ceo') await putDoc(env, 'notifs', rid('n'), { to: 'role:ceo', reg: true, text: nm + ' requested access (confirm: ' + ap + ').', ts, time: podgoricaStamp(ts).short, readBy: {} });
   if (env.RESEND_API_KEY) {
     await sendMail(env, mailOf(env, [email], 'We received your DAA Pay access request', 'Welcome to DAA Pay, ' + t('first'),
@@ -367,7 +418,7 @@ function can(role, action, st) {
 }
 const acctOk = (s) => /^\d{3}-\d{13}-\d{2}$/.test(String(s || ''));
 
-async function writeDoc(env, me, b) {
+async function writeDoc(env, me, b, ctx) {
   const col = b.col, id = String(b.id || ''), op = b.op, data = b.data || {};
   if (!COLS.includes(col) || !/^[A-Za-z0-9_\-.~:@+]{1,200}$/.test(id) || !['set', 'update', 'delete'].includes(op)) fail(400, 'That change is not valid.');
   if (op !== 'delete' && (typeof data !== 'object' || Array.isArray(data))) fail(400, 'That change is not valid.');
@@ -386,7 +437,7 @@ async function writeDoc(env, me, b) {
     if ('notify' in data) {
       if (me.id !== id) deny('Only the person themselves can change their notification settings.');
       const clean = {};
-      for (const k of NOTIFY_KINDS) { const v = data.notify && data.notify[k]; if (v && typeof v === 'object') { clean[k] = {}; if (v.app === false) clean[k].app = false; if (v.email === false) clean[k].email = false; } }
+      for (const k of NOTIFY_KINDS) { const v = data.notify && data.notify[k]; if (v && typeof v === 'object') { clean[k] = {}; if (v.app === false) clean[k].app = false; if (v.email === false) clean[k].email = false; if (v.push === false) clean[k].push = false; } }
       data.notify = clean;
     }
     const topKeys = ['role', 'active', 'managerId', 'totp'];
@@ -432,7 +483,7 @@ async function writeDoc(env, me, b) {
     }
   } else if (col === 'notifs') {
     if (op === 'delete') deny();
-    if (!cur) next = Object.assign({}, data, { from: me.id, ts: now() });
+    if (!cur) { next = Object.assign({}, data, { from: me.id, ts: now() }); const n = Object.assign({ id }, next); const job = pushNotif(env, n).catch(() => {}); if (ctx) ctx.waitUntil(job); }
     else { const ks = Object.keys(data); if (!(ks.length === 1 && ks[0] === 'readBy')) deny(); next = merge(cur, { readBy: { [me.id]: true } }); }
   } else if (col === 'log') {
     if (op !== 'set' || cur) deny();
@@ -677,7 +728,7 @@ async function reportBug(req, env, me, b) {
   await putDoc(env, 'bugs', id, bug);
   await logEvent(env, me.id, 'data', 'Reported a bug: ' + bug.what.slice(0, 80));
   const admins = (await allDocs(env, 'users')).filter((u) => u.role === 'sa' && u.active !== false && u.email && wants(u, 'bugs')).map((u) => u.email);
-  for (const u of await allDocs(env, 'users')) if (u.role === 'sa' && u.active !== false) await putDoc(env, 'notifs', rid('n'), { to: u.id, text: nameOf(me) + ' reported a bug: ' + bug.what.slice(0, 100), ts, time: bug.time, readBy: {}, bug: id });
+  for (const u of await allDocs(env, 'users')) if (u.role === 'sa' && u.active !== false) { const bn = { to: u.id, text: nameOf(me) + ' reported a bug: ' + bug.what.slice(0, 100), ts, time: bug.time, readBy: {}, bug: id }; await putDoc(env, 'notifs', rid('n'), bn); await pushNotif(env, bn).catch(() => {}); }
   if (env.RESEND_API_KEY && admins.length) await sendMail(env, mailOf(env, admins, 'DAA Pay bug report (' + bug.severity + '): ' + bug.what.slice(0, 60), 'New bug report',
     ['From ' + nameOf(me) + ' (' + ROLE[me.role] + '), ' + bug.time + '.'], { label: 'Open bug reports', url: appUrl(env) },
     [['What happened', bug.what], ['Expected', bug.expected || '—'], ['Steps', bug.steps || '—'], ['Where', bug.area || bug.context.page || '—'], ['Device', bug.context.screen + ' · ' + bug.context.agent]])).catch(() => {});
@@ -748,7 +799,7 @@ async function announce(env, me, b) {
   await putDoc(env, 'news', id, { by: me.id, ts, time, level, title, body: text, until, active: true });
   await logEvent(env, me.id, 'data', 'Sent a ' + L.label + ' announcement: ' + title);
   const users = (await allDocs(env, 'users')).filter((u) => u.active !== false);
-  for (const u of users) if (u.id !== me.id) await putDoc(env, 'notifs', rid('n'), { to: u.id, text: L.label + ': ' + title, ts, time, readBy: {}, news: id });
+  for (const u of users) if (u.id !== me.id) { const nn = { to: u.id, text: L.label + ': ' + title, ts, time, readBy: {}, news: id }; await putDoc(env, 'notifs', rid('n'), nn); await pushNotif(env, nn).catch(() => {}); }
   if (!env.RESEND_API_KEY || b.email === false) return json({ ok: true, id, emailOn: !!env.RESEND_API_KEY, emailed: 0, failed: 0 });
   let emailed = 0, failed = 0;
   const lines = text ? text.split(/\n{2,}/) : [];

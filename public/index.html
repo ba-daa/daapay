@@ -342,7 +342,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.5.4';
+var APP_VERSION = '0.6.0';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -493,6 +493,11 @@ function onSignedIn(u) {
   setUi({ tab: 'queue', open: null });
 }
 
+function openFromUrl(u) {
+  var q = new URL(u, location.origin).searchParams;
+  if (q.get('open')) setUi({ tab: 'queue', ce: null, open: q.get('open'), bell: false, menu: false, nav: false });
+  else if (q.get('tab') === 'users') setUi({ tab: 'users', open: null, bell: false });
+}
 // ---------- installable app
 var installEvt = null;
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEvt = e; redraw(); });
@@ -509,6 +514,8 @@ async function init() {
   if (tk) G.tokenView = { t: tk, kind: qs.get('invite') ? 'invite' : 'reset' };
   try { var m = await window.daa.get('/api/me'); if (m.user) onSignedIn(m.user); else G.setup = !!m.setup; } catch (e) { G.err = navigator.onLine === false ? 'You are offline. DAA Pay opens again as soon as you are connected.' : 'DAA Pay could not reach its server. Check your connection and reload the page.'; window.addEventListener('online', function () { location.reload(); }); }
   if (qs.get('add') && G.me) { G.ui.modal = 'choose'; try { history.replaceState(null, '', '/'); } catch (e) {} }
+  if ((qs.get('open') || qs.get('tab')) && G.me) { openFromUrl(location.href); try { history.replaceState(null, '', '/'); } catch (e) {} }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.type === 'open' && G.me) openFromUrl(e.data.url); });
   G.ready = true; redraw();
 }
 
@@ -1040,7 +1047,8 @@ var HELP = [
     'Filter the queue by payment type, status, client, project and dates. Tap a column name (or use Sort on a phone) to sort.',
     'Select several items to approve, send to payment, mark paid, remove or download them together. Download as PDF makes one file with a cover page per item followed by its documents.'] },
   { id: 'emails', title: 'Emails and notifications', text: [
-    'Choose what reaches you: Profile settings → Notifications. Turn each type on or off in the app (the bell) and by email. Sign-in and account emails, and Critical announcements, always come.',
+    'Push notifications: Profile settings → Notifications → Push on this device → Turn on. On iPhone, install DAA Pay on the Home Screen first and open it from the icon (iOS 16.4 or later). Tapping a notification opens the request.',
+    'Choose what reaches you: Profile settings → Notifications. Turn each type on or off in the app (the bell), as push and by email. Sign-in and account emails, and Critical announcements, always come.',
     'The bell shows what needs you. DAA Pay also emails: reviewers when new requests arrive, the office manager when something is sent to payment, the initiator when it is denied or paid, and everyone a summary every Monday.',
     'New people get a welcome or invitation email; people who ask for access get a confirmation and an email when they are approved.'] },
   { id: 'account', title: 'Your account and security', text: [
@@ -1296,7 +1304,9 @@ function Header() {
     </nav>
   </div>`}`;
 }
-function signOut() { window.daa.post('/api/logout').catch(function () {}); window.daa.stop(); COLS.forEach(function (c) { G.data[c] = []; }); G.me = null; G.memId = null; sessionSet(null); setUi({ nav: false, menu: false, bell: false, profile: false, open: null, modal: null, checked: {}, tab: 'queue' }); }
+function signOut() {
+  try { if (pushSupport()) navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) { if (sub) { window.daa.post('/api/push/unsubscribe', { endpoint: sub.endpoint }).catch(function () {}); sub.unsubscribe(); } }).catch(function () {}); } catch (e) {}
+  window.daa.post('/api/logout').catch(function () {}); window.daa.stop(); COLS.forEach(function (c) { G.data[c] = []; }); G.me = null; G.memId = null; sessionSet(null); setUi({ nav: false, menu: false, bell: false, profile: false, open: null, modal: null, checked: {}, tab: 'queue' }); }
 // ---------- personal notification settings
 var NOTIF_TYPES = [
   { k: 'review', label: 'New and corrected requests to review', who: function (r) { return isTop(r) || r === 'am'; }, app: 1, email: 1 },
@@ -1321,6 +1331,45 @@ function notifKind(n) {
   if (/ was approved\.$/.test(n.text || '')) return 'approved';
   return 'other';
 }
+// Push notifications on this device (the installed app on a phone, or the browser on a computer).
+function pushSupport() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+function PushDevice() {
+  var ss = useState({ state: 'checking', busy: false }), st = ss[0], setSt = ss[1];
+  function check() {
+    if (!pushSupport()) { setSt({ state: platform() === 'ios' && !isInstalled() ? 'ios-install' : 'unsupported' }); return; }
+    if (Notification.permission === 'denied') { setSt({ state: 'blocked' }); return; }
+    navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) { setSt({ state: sub ? 'on' : 'off', sub: sub }); }, function () { setSt({ state: 'off' }); });
+  }
+  useEffect(check, []);
+  async function turnOn() {
+    setSt(Object.assign({}, st, { busy: true }));
+    try {
+      var perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setSt({ state: perm === 'denied' ? 'blocked' : 'off' }); return; }
+      var key = (await window.daa.get('/api/push/key')).key, reg = await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(key) });
+      await window.daa.post('/api/push/subscribe', { subscription: sub.toJSON() });
+      setSt({ state: 'on', sub: sub }); toast('Push notifications are on for this device.');
+    } catch (e) { setSt({ state: 'off' }); toast('Could not turn on push: ' + (e.message || e), true); }
+  }
+  async function turnOff() {
+    setSt(Object.assign({}, st, { busy: true }));
+    try { var reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if (sub) { await window.daa.post('/api/push/unsubscribe', { endpoint: sub.endpoint }); await sub.unsubscribe(); } } catch (e) {}
+    setSt({ state: 'off' }); toast('Push notifications are off for this device.');
+  }
+  async function test() { try { var r = await window.daa.post('/api/push/test'); toast(r.sent ? 'Test sent. It should appear in a few seconds.' : 'No device received it. Turn push off and on again.', !r.sent); } catch (e) { toast(e.message, true); } }
+  var msg = { checking: 'Checking this device…', on: 'On for this device.', off: 'Off on this device.', blocked: 'Blocked for DAA Pay in this browser’s settings. Allow notifications for this site there, then come back.',
+    'ios-install': 'On iPhone and iPad, push works once DAA Pay is on your Home Screen (iOS 16.4 or later). Install it, open it from the icon, then turn push on here.', unsupported: 'This browser cannot receive push notifications.' }[st.state];
+  return html`<div class="card pad row" style="justify-content: space-between; gap: 10px; background: var(--bg)">
+    <div style="min-width: 0; flex: 1 1 220px"><b>Push on this device</b><div class="muted" style="font-size: 13px">${msg}</div></div>
+    <div class="row">
+      ${st.state === 'off' && html`<button class="btn sm" disabled=${st.busy} onClick=${turnOn}>Turn on</button>`}
+      ${st.state === 'on' && html`<button class="btn q sm" onClick=${test}>Send a test</button><button class="btn q sm" disabled=${st.busy} onClick=${turnOff}>Turn off</button>`}
+      ${st.state === 'ios-install' && html`<button class="btn o sm" onClick=${function () { setUi({ profile: false, install: true }); }}>How to install</button>`}
+    </div>
+  </div>`;
+}
+function b64uBytes(s) { var b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), a = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return a; }
 function NotifSettings() {
   var me = G.me, types = NOTIF_TYPES.filter(function (t) { return t.who(me.role); });
   function setPref(k, ch, on) {
@@ -1331,11 +1380,13 @@ function NotifSettings() {
     patch('users', me.id, { notify: n }).then(function (r) { if (r) toast('Notification settings saved.'); });
   }
   return html`<div class="mbody" style="border-top: 1px solid var(--line-2); gap: 10px">
-    <div><b>Notifications</b><div class="muted" style="font-size: 13px">Choose what reaches you in the app (the bell) and by email. Sign-in, password and account emails always come.</div></div>
-    <table class="t nset"><thead><tr><th style="padding-left: 0">What</th><th class="c">In app</th><th class="c">Email</th></tr></thead>
-      <tbody>${types.map(function (t) { var a = wantsN(me, t.k, 'app'), e = wantsN(me, t.k, 'email'); return html`<tr key=${t.k}>
-        <td style="padding-left: 0">${t.label}${t.note ? html`<div class="muted" style="font-size: 12px">${t.note}</div>` : ''}${t.warn && !a && !e ? html`<div style="font-size: 12px; color: var(--danger)">${t.warn}</div>` : ''}</td>
+    <div><b>Notifications</b><div class="muted" style="font-size: 13px">Choose what reaches you in the app (the bell), as push notifications on your devices, and by email. Sign-in, password and account emails always come.</div></div>
+    <${PushDevice} />
+    <table class="t nset"><thead><tr><th style="padding-left: 0">What</th><th class="c">In app</th><th class="c">Push</th><th class="c">Email</th></tr></thead>
+      <tbody>${types.map(function (t) { var a = wantsN(me, t.k, 'app'), e = wantsN(me, t.k, 'email'), pu = wantsN(me, t.k, 'push'); return html`<tr key=${t.k}>
+        <td style="padding-left: 0">${t.label}${t.note ? html`<div class="muted" style="font-size: 12px">${t.note}</div>` : ''}${t.warn && !a && !e && !pu ? html`<div style="font-size: 12px; color: var(--danger)">${t.warn}</div>` : ''}</td>
         <td class="c">${t.app ? html`<input type="checkbox" aria-label=${t.label + ' in the app'} checked=${a} onChange=${function (ev) { setPref(t.k, 'app', ev.target.checked); }} />` : html`<span class="muted">—</span>`}</td>
+        <td class="c">${t.app ? html`<input type="checkbox" aria-label=${t.label + ' as push'} checked=${pu} onChange=${function (ev) { setPref(t.k, 'push', ev.target.checked); }} />` : html`<span class="muted">—</span>`}</td>
         <td class="c">${t.email ? html`<input type="checkbox" aria-label=${t.label + ' by email'} checked=${e} onChange=${function (ev) { setPref(t.k, 'email', ev.target.checked); }} />` : html`<span class="muted">—</span>`}</td></tr>`; })}</tbody></table>
   </div>`;
 }

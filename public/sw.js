@@ -1,6 +1,6 @@
 // DAA Pay service worker: lets the app open fast and show a clear message when offline.
 // Data (/api) and stored files (/_blob) always come from the server and are never cached here.
-var VERSION = 'daa-pay-v3';
+var VERSION = 'daa-pay-v4';
 var SHELL = ['/', '/api-shim.js', '/manifest.webmanifest', '/static/daa-logo.png', '/static/icon-192.png', '/static/IBMPlexSans-Regular.woff', '/static/IBMPlexSans-SemiBold.woff'];
 
 self.addEventListener('install', function (e) {
@@ -26,4 +26,21 @@ self.addEventListener('fetch', function (e) {
       return hit || net;
     }));
   }
+});
+
+// Push notifications: show them, and open DAA Pay at the right place when tapped.
+self.addEventListener('push', function (e) {
+  var m = {}; try { m = e.data ? e.data.json() : {}; } catch (x) { m = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(m.title || 'DAA Pay', {
+    body: m.body || 'There is something new in DAA Pay.', icon: '/static/icon-192.png', badge: '/static/badge-96.png',
+    tag: m.tag || undefined, renotify: !!m.tag, requireInteraction: !!m.urgent, data: { url: m.url || '/' }
+  }));
+});
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  var url = new URL((e.notification.data && e.notification.data.url) || '/', self.location.origin).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+    for (var i = 0; i < list.length; i++) { var c = list[i]; if (new URL(c.url).origin === self.location.origin && 'focus' in c) { c.postMessage({ type: 'open', url: url }); return c.focus(); } }
+    return self.clients.openWindow(url);
+  }));
 });
