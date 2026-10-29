@@ -342,7 +342,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.6.0';
+var APP_VERSION = '0.6.1';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -1022,7 +1022,7 @@ var HELP = [
     'No QR code? Enter the details by hand in the same form, or leave them and complete the item later from its preview. Invoices already in the queue are skipped.'] },
   { id: 'requests', title: 'Refunds and payments by contract', text: [
     'Refund request: who is refunded, how they are paid (domestic account or IBAN/SWIFT), the reason and the amount. Attach receipts.',
-    'Payment by contract: beneficiary, account, purpose, amount, JMBG or PIB, payment reference and the legal reference (contract or decision). Generate automatically makes a numbered decision reference.',
+    'Payment by contract: beneficiary, account, purpose, amount, JMBG or PIB, the date (today unless you change it) and the legal reference (contract or decision). Generate automatically makes a numbered decision reference.',
     'Choose a beneficiary from the archive to fill in their details. The archive is shared: a beneficiary added by anyone can be chosen by everyone. New beneficiaries are saved automatically when you submit.'] },
   { id: 'links', title: 'Clients, projects and cost estimates', text: [
     'Every request can be linked to a client, one of that client’s projects and a cost estimate (number plus the CE file). All three are optional.',
@@ -1638,7 +1638,7 @@ function paymentLines(x) {
     [x.kind === 'invoice' ? 'Invoice no.' : 'Reference', x.number || '—'],
     ['Due date', x.due || '—'],
     ['Purpose', x.kind === 'refund' ? fieldVal(x, 'Reason for refund') : x.kind === 'contract' ? (fieldVal(x, 'Purpose of payment') || '—') : 'Invoice ' + (x.number || '')],
-    ['Payment reference', fieldVal(x, 'Payment reference') || (x.kind === 'invoice' ? (x.number || '—') : '—')],
+    fieldVal(x, 'Date') && !fieldVal(x, 'Payment reference') ? ['Date', fieldVal(x, 'Date')] : ['Payment reference', fieldVal(x, 'Payment reference') || (x.kind === 'invoice' ? (x.number || '—') : '—')],
     ['Client / project', (clientName(x.clientId) || '—') + ' / ' + (projectName(x.projectId) || '—')],
     ['Approved for payment by', userName(x.s2By)], ['Added by', userName(x.by)]
   ];
@@ -1815,7 +1815,7 @@ function FixDenied(p) {
         <${Field} label="Invoice number"><input id=${id('no')} class="inp" value=${f.number} onInput=${function (e) { set({ number: e.target.value }); }} /><//>
         <${Field} label="Issue date"><input id=${id('date')} class="inp" type="date" value=${f.iso} onInput=${function (e) { set({ iso: e.target.value }); }} /><//>
         <${Field} label="Due date"><input id=${id('due')} class="inp" placeholder="dd.mm.yyyy" value=${f.due} onInput=${function (e) { set({ due: e.target.value }); }} /><//>`}
-      ${!inv && f.fields.map(function (fl, i) { return html`<${Field} key=${fl.label} label=${fl.label} wide=${/Reason|Purpose|Legal/.test(fl.label)}>${/Reason|Purpose/.test(fl.label) ? html`<textarea class="inp" rows="2" value=${fl.value} onInput=${function (e) { var a = f.fields.slice(); a[i] = { label: fl.label, value: e.target.value }; set({ fields: a }); }}></textarea>` : html`<input class=${'inp' + (/Account|IBAN|JMBG|reference/.test(fl.label) ? ' mono' : '')} value=${fl.value} onInput=${function (e) { var a = f.fields.slice(); a[i] = { label: fl.label, value: e.target.value }; set({ fields: a }); }} />`}<//>`; })}
+      ${!inv && f.fields.map(function (fl, i) { return html`<${Field} key=${fl.label} label=${fl.label} wide=${/Reason|Purpose|Legal/.test(fl.label)}>${/Reason|Purpose/.test(fl.label) ? html`<textarea class="inp" rows="2" value=${fl.value} onInput=${function (e) { var a = f.fields.slice(); a[i] = { label: fl.label, value: e.target.value }; set({ fields: a }); }}></textarea>` : html`<input class=${'inp' + (/Account|IBAN|JMBG|reference/.test(fl.label) ? ' mono' : '')} placeholder=${fl.label === 'Date' ? 'dd.mm.yyyy' : ''} value=${fl.value} onInput=${function (e) { var a = f.fields.slice(); a[i] = { label: fl.label, value: e.target.value }; set({ fields: a }); }} />`}<//>`; })}
       <${Field} label="Amount (EUR)" req hint=${inv && x.iic ? 'From the fiscal QR code; change it only if the invoice itself changed' : ''}><input id=${id('amt')} class="inp num" inputmode="decimal" value=${f.amount} onInput=${function (e) { set({ amount: e.target.value }); }} /><//>
     </div>
     ${inv && html`<div class="row"><label class="btn q sm" style="cursor: pointer">${I.dl} ${f.file ? 'Change new invoice file' : 'Replace invoice file'}<input class="sr" type="file" accept="application/pdf,image/*" onChange=${function (e) { set({ file: (e.target.files || [])[0] || null }); }} /></label>${f.file && html`<span class="filebox" style="font-size: 13px">${f.file.name}</span>`}</div>
@@ -2008,7 +2008,7 @@ function DraftForm(p) {
 }
 
 // ================= ADD TO QUEUE =================
-function blankForm() { return { ceId: '', beneficiary: '', benId: '', saveBen: true, payType: 'domestic', account: '', iban: '', swift: '', reason: '', purpose: '', amount: '', jmbg: '', payRef: '', legalRef: '', legalAuto: false, clientId: '', newClient: '', projectId: '', newProject: '', estNumber: '' }; }
+function blankForm() { return { ceId: '', beneficiary: '', benId: '', saveBen: true, payType: 'domestic', account: '', iban: '', swift: '', reason: '', purpose: '', amount: '', jmbg: '', payDate: todayIso(), legalRef: '', legalAuto: false, clientId: '', newClient: '', projectId: '', newProject: '', estNumber: '' }; }
 function AddModal() {
   var k = G.ui.modal;
   var fs = useState(blankForm()), form = fs[0], setForm = fs[1];
@@ -2056,6 +2056,7 @@ function AddModal() {
     if (k === 'refund') { if (!form.beneficiary.trim()) e.push('beneficiary name and surname'); if (!form.reason.trim()) e.push('reason for refund'); }
     if ((k === 'refund' || k === 'contract') && !(amt > 0)) e.push('amount');
     if (k === 'contract' && !form.legalRef.trim()) e.push('legal reference');
+    if (k === 'contract' && !form.payDate) e.push('date');
     if (form.clientId === '__new' && !form.newClient.trim()) e.push('new client name');
     if (form.projectId === '__new' && !form.newProject.trim()) e.push('new project name');
     if (!form.ceId && form.estNumber.trim() && !files.estimate) e.push('cost estimate document');
@@ -2108,7 +2109,7 @@ function AddModal() {
         var acct = form.payType === 'domestic' ? form.account : 'IBAN ' + (form.iban || '—') + '\nSWIFT ' + (form.swift || '—');
         var fields = [{ label: 'Beneficiary', value: form.beneficiary }, { label: 'Type of payment', value: form.payType === 'domestic' ? 'Domestic' : 'International' }, { label: form.payType === 'domestic' ? 'Account number' : 'IBAN / SWIFT', value: acct }];
         if (k === 'refund') fields.push({ label: 'Reason for refund', value: form.reason });
-        if (k === 'contract') { fields.push({ label: 'Purpose of payment', value: form.purpose }); fields.push({ label: 'JMBG / PIB', value: form.jmbg }); fields.push({ label: 'Payment reference', value: form.payRef }); fields.push({ label: 'Legal reference', value: form.legalRef + (form.legalAuto ? ' (auto-generated)' : '') }); }
+        if (k === 'contract') { fields.push({ label: 'Purpose of payment', value: form.purpose }); fields.push({ label: 'JMBG / PIB', value: form.jmbg }); fields.push({ label: 'Date', value: isoToDate(form.payDate) }); fields.push({ label: 'Legal reference', value: form.legalRef + (form.legalAuto ? ' (auto-generated)' : '') }); }
         fields = fields.filter(function (f) { return f.value && String(f.value).trim(); });
         var att = [];
         for (var a = 0; a < files.attach.length; a++) att.push({ name: files.attach[a].name, fileId: await uploadFile(files.attach[a]) });
@@ -2194,7 +2195,7 @@ function AddModal() {
             <${Field} label="Amount (EUR)" req><input id="rq-amt" class="inp num" inputmode="decimal" placeholder="0,00" value=${form.amount} onInput=${on('amount')} /><//>
             ${k === 'contract' && html`<${Field} label="JMBG / PIB"><input id="rq-jmbg" class="inp" inputmode="numeric" value=${form.jmbg} onInput=${on('jmbg')} /><//>`}
           </div>
-          ${k === 'contract' && html`<${Field} label="Payment reference"><input id="rq-ref" class="inp" value=${form.payRef} onInput=${on('payRef')} /><//>
+          ${k === 'contract' && html`<${Field} label="Date" req hint="Today's date; change it if needed"><input id="rq-date" class="inp" type="date" value=${form.payDate} onInput=${on('payDate')} /><//>
             <div class="row" style="align-items: flex-end"><div style="flex: 1 1 260px"><${Field} label="Legal reference (contract, decision)" req><input id="rq-legal" class="inp" placeholder="Contract or decision number" value=${form.legalRef} onInput=${on('legalRef')} /><//></div>
               <button class="btn o" onClick=${function () { var n = G.data.items.filter(function (x) { return x.kind === 'contract'; }).length + 1; setForm(Object.assign({}, form, { legalRef: 'DEC-' + new Date().getFullYear() + '-' + pad(n, 3), legalAuto: true })); }}>Generate automatically</button></div>
             ${form.legalAuto && html`<div style="margin-top: -8px; font-size: 12px; color: var(--ink-2)">Auto-generated reference, numbered from the contract payments already in the queue.</div>`}`}
