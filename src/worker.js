@@ -3,7 +3,7 @@ import { vapidKeys, sendPush } from './push.js';
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.6.2';
+const APP_VERSION = '0.6.3';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -274,6 +274,7 @@ async function api(req, env, url, ctx) {
   if (p === '/api/announce' && m === 'POST') return announce(env, me, await body(req));
   if (p === '/api/numbers/fill' && m === 'POST') return fillNumbers(env);
   if (p === '/api/notify/denied' && m === 'POST') return notifyDenied(env, me, await body(req));
+  if (p === '/api/notify/beneficiary' && m === 'POST') return notifyBeneficiary(env, me, await body(req));
   if (p === '/api/costs' && m === 'GET') return projectCosts(env, me);
   if (p === '/api/regs/approve' && m === 'POST') return approveReg(env, me, await body(req));
   if (p === '/api/backup' && m === 'GET') return backupApi(env, me);
@@ -735,6 +736,39 @@ async function reportBug(req, env, me, b) {
   return json({ ok: true, id });
 }
 
+// Notices to the supplier/beneficiary (outside DAA) when a payment is sent to payment and when it is paid.
+// Only to the email saved on that request, only by the roles that do that step, once per step unless resent on purpose.
+async function notifyBeneficiary(env, me, b) {
+  const ev = b.event === 'paid' ? 'paid' : 'sent', st = ev === 'paid' ? 4 : 3;
+  if (!(isTop(me.role) || (ev === 'paid' && me.role === 'om'))) fail(403, 'Your role cannot send these notices.');
+  if (!env.RESEND_API_KEY) return json({ ok: true, sent: 0, why: 'Email is not set up yet.' });
+  let sent = 0, why = '';
+  const fromName = (String(env.MAIL_FROM || '').match(/<([^>]+)>/) || [0, 'pay@daa.co.me'])[1];
+  for (const id of (b.ids || []).slice(0, 50).map(String)) {
+    const x = await getDoc(env, 'items', id);
+    if (!x || (x.status || 0) !== st || x.benNotify === false || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.benEmail || '')) { why = 'This request is not at that step or has no email.'; continue; }
+    if (x.benMail && x.benMail[ev] && x.benMail[ev].ok && !b.again) continue;
+    const day = podgoricaStamp().date, ref = x.kind === 'invoice' ? (x.number || '') : (x.number || '');
+    const what = { invoice: ['vaš račun' + (ref ? ' br. ' + ref : '') + (x.date ? ' od ' + x.date : ''), 'your invoice' + (ref ? ' no. ' + ref : '') + (x.date ? ' dated ' + x.date : '')], refund: ['refundacija troškova', 'the refund of your expenses'], contract: ['isplata' + (ref ? ' po osnovu ' + ref : ''), 'the payment' + (ref ? ' under ' + ref : '')] }[x.kind] || ['uplata', 'the payment'];
+    const acct = x.kind === 'invoice' ? (x.account || '') : '';
+    const lines = ev === 'sent'
+      ? ['Poštovani,', 'obavještavamo vas da je ' + what[0] + ' u iznosu od ' + fmt(x.amount) + ' EUR poslat' + (x.kind === 'refund' || x.kind === 'contract' ? 'a' : '') + ' na plaćanje. Uplata slijedi u narednim danima.', 'Dear Sir or Madam, we are letting you know that ' + what[1] + ' of ' + fmt(x.amount) + ' EUR has been sent for payment. The transfer will follow in the coming days.']
+      : ['Poštovani,', 'obavještavamo vas da je ' + what[0] + ' u iznosu od ' + fmt(x.amount) + ' EUR plaćen' + (x.kind === 'refund' || x.kind === 'contract' ? 'a' : '') + ' ' + day + (acct ? ' na račun ' + acct : '') + '.', 'Dear Sir or Madam, we are letting you know that ' + what[1] + ' of ' + fmt(x.amount) + ' EUR was paid on ' + day + (acct ? ' to account ' + acct : '') + '.'];
+    lines.push('Za pitanja odgovorite na ovaj email. / For any questions, reply to this email.', 'S poštovanjem / Kind regards,\nDAA Montenegro d.o.o.');
+    const rows = [[x.kind === 'invoice' ? 'Račun / Invoice' : x.kind === 'refund' ? 'Refundacija / Refund' : 'Isplata / Payment', ref || '—'], ['Iznos / Amount', fmt(x.amount) + ' EUR']].concat(acct ? [['Račun primaoca / Account', acct]] : []);
+    const subject = 'DAA Montenegro: ' + (ev === 'sent' ? 'plaćanje u obradi / payment in progress' : 'plaćeno / paid') + (ref ? ' · ' + ref : '');
+    const m = mailOf(env, [x.benEmail], subject, ev === 'sent' ? 'Poslato na plaćanje / Sent for payment' : 'Plaćeno / Paid', lines, null, rows, null, { name: 'DAA Montenegro d.o.o.', logo: '/static/daa-logo.png', w: 36, h: 47, footer: 'DAA Montenegro d.o.o. · PIB 02764318' });
+    m.from = 'DAA Montenegro <' + fromName + '>';
+    if (me.email) m.replyTo = me.email;
+    let rec;
+    try { await sendMail(env, m); rec = { ok: true, at: podgoricaStamp().short, to: x.benEmail, by: me.id }; sent++; }
+    catch (e) { rec = { ok: false, at: podgoricaStamp().short, to: x.benEmail, err: e.message.slice(0, 200) }; why = e.message; }
+    const benMail = Object.assign({}, x.benMail || {}); benMail[ev] = rec;
+    await putDoc(env, 'items', id, Object.assign({}, x, { benMail }));
+    await logEvent(env, me.id, 'email', (ev === 'sent' ? 'Sent-to-payment' : 'Paid') + ' notice ' + (rec.ok ? 'emailed' : 'failed') + ' to ' + x.benEmail + ' for ' + pq(x.pqn), id);
+  }
+  return json({ ok: true, sent, why });
+}
 // Email the initiator that their request was denied, with the reason (unless they turned it off).
 async function notifyDenied(env, me, b) {
   const x = await getDoc(env, 'items', String(b.id || ''));
@@ -814,15 +848,16 @@ async function announce(env, me, b) {
 
 // ---------------------------------------------------------------- email (Resend)
 // Shared black-and-white layout for every DAA Pay email.
-function mailOf(env, to, subject, heading, lines, button, rows, tag) {
+function mailOf(env, to, subject, heading, lines, button, rows, tag, brand) {
+  brand = brand || { name: 'DAA Pay', logo: '/static/icon-192.png', w: 40, h: 40, footer: 'DAA Montenegro d.o.o. · DAA Pay' };
   const html = '<div style="background:#F3F3F1;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;color:#111"><div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #D9D9D5;border-radius:12px;padding:28px">' +
-    '<table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:18px"><tr><td><img src="' + appUrl(env) + '/static/icon-192.png" width="40" height="40" alt="DAA" style="display:block;border-radius:6px"></td><td style="padding-left:10px;font-weight:700;font-size:16px">DAA Pay</td></tr></table>' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:18px"><tr><td><img src="' + appUrl(env) + brand.logo + '" width="' + brand.w + '" height="' + brand.h + '" alt="DAA" style="display:block;border-radius:6px"></td><td style="padding-left:10px;font-weight:700;font-size:16px">' + esc(brand.name) + '</td></tr></table>' +
     (tag ? '<div style="display:inline-block;background:' + tag.color + ';color:' + (tag.ink || '#fff') + ';font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:4px 10px;border-radius:999px;margin-bottom:10px">' + esc(tag.label) + '</div>' : '') +
     '<h1 style="font-size:20px;line-height:1.3;margin:0 0 12px">' + esc(heading) + '</h1>' +
     lines.map((l) => '<p style="font-size:14px;line-height:1.55;margin:0 0 10px">' + esc(l) + '</p>').join('') +
     (rows && rows.length ? '<table cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;margin:8px 0 14px;font-size:13px">' + rows.map((r) => '<tr>' + r.map((c, i) => '<td style="border-top:1px solid #E5E5E1;' + (i === r.length - 1 ? 'text-align:right;font-weight:700;white-space:nowrap' : '') + '">' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>' : '') +
     (button ? '<p style="margin:18px 0 6px"><a href="' + esc(button.url) + '" style="display:inline-block;background:#111;color:#fff;text-decoration:none;font-weight:600;padding:12px 18px;border-radius:8px">' + esc(button.label) + '</a></p><p style="font-size:12px;color:#666;margin:6px 0 0;word-break:break-all">' + esc(button.url) + '</p>' : '') +
-    '<p style="font-size:12px;color:#666;margin:22px 0 0;border-top:1px solid #E5E5E1;padding-top:12px">DAA Montenegro d.o.o. · DAA Pay</p></div></div>';
+    '<p style="font-size:12px;color:#666;margin:22px 0 0;border-top:1px solid #E5E5E1;padding-top:12px">' + esc(brand.footer) + '</p></div></div>';
   const text = heading + '\n\n' + lines.join('\n\n') + (rows && rows.length ? '\n\n' + rows.map((r) => r.join(' · ')).join('\n') : '') + (button ? '\n\n' + button.label + ': ' + button.url : '') + '\n';
   return { to, subject, html, text };
 }
@@ -831,7 +866,7 @@ async function sendMail(env, m) {
   if (!env.RESEND_API_KEY) fail(503, 'Email is not set up yet. Add RESEND_API_KEY to the Cloudflare Worker.');
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST', headers: { authorization: 'Bearer ' + env.RESEND_API_KEY, 'content-type': 'application/json' },
-    body: JSON.stringify({ from: env.MAIL_FROM || 'DAA Pay <pay@daa.co.me>', to: m.to, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments })
+    body: JSON.stringify(Object.assign({ from: m.from || env.MAIL_FROM || 'DAA Pay <pay@daa.co.me>', to: m.to, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments }, m.replyTo ? { reply_to: m.replyTo } : {}))
   });
   if (!r.ok) { const t = await r.text(); fail(502, 'The email service refused the message (' + r.status + '): ' + t.slice(0, 200)); }
 }

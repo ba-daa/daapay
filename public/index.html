@@ -343,7 +343,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.6.2';
+var APP_VERSION = '0.6.3';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -632,7 +632,7 @@ function printRows(x) {
     { label: 'Internal no.', value: pqNo(x.pqn) }, { label: 'Type', value: KIND[x.kind] },
     { label: x.kind === 'invoice' ? 'Supplier' : 'Beneficiary', value: x.title },
     { label: x.kind === 'invoice' ? 'Invoice no.' : 'Reference', value: x.number || '—' },
-    { label: 'Date', value: x.date || '—' }, { label: 'Client', value: clientName(x.clientId) || '—' }, { label: 'Project', value: projectName(x.projectId) || '—' },
+    { label: 'Date', value: x.date || '—' }, { label: x.kind === 'invoice' ? 'Supplier email' : 'Beneficiary email', value: x.benEmail || '—' }, { label: 'Client', value: clientName(x.clientId) || '—' }, { label: 'Project', value: projectName(x.projectId) || '—' },
     { label: 'Amount', value: x.amount == null ? '—' : fmt(x.amount) + ' EUR' + (x.kind === 'invoice' ? ' (NET ' + fmt(itemNet(x)) + ' + PDV ' + fmt(r2(x.amount - itemNet(x))) + ')' : '') }, { label: 'Status', value: STATUS[x.status || 0] },
     { label: 'Added by', value: userName(x.by) }
   ];
@@ -770,6 +770,8 @@ function VatBox(p) {
   </div>`;
 }
 function openProject(clientId, projectId) { if (!clientId && !projectId) return; setUi({ tab: 'ce', ce: null, ceView: 'projects', open: null, pjOpen: projectId || null, pjFocus: projectId ? 'pj-' + projectId : 'cl-' + clientId }); }
+var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+function emailOk(v) { return EMAIL_RE.test(String(v || '').trim()); }
 function projectName(id) { var p = byId(G.data.projects, id); return p ? p.name : ''; }
 // DAA cost estimates that a payment can be linked to (approved first, then newest).
 function ceOptions(clientId, projectId) {
@@ -1032,6 +1034,7 @@ var HELP = [
     'Each request moves through To review → Approved → Approved for payment → Sent to payment → Paid. It can also be Denied with a reason, which goes to the person who added it.',
     'Account managers approve or deny. The CEO approves for payment and sends to payment; the office manager then gets an email with the payment details and marks it Paid once executed. The person who added the request is emailed when it is paid.',
     'An invoice can only be sent to payment once it has a bank account.',
+    'Supplier or beneficiary email: when it is on the request (it comes from the beneficiary archive, or add it in the preview), they get a short notice in Montenegrin and English when the payment is sent and again when it is paid. Untick it on the request to skip.',
     'Denied? Open the request and choose Correct this request: change the details or documents, say what you changed and tap Send back for approval. It starts again at To review, the reviewers and the person who denied it are told, and earlier denials stay visible on the request.'] },
   { id: 'accounts', title: 'Bank accounts', text: [
     'Montenegrin accounts have a 3-digit bank code, the account number and 2 last digits, for example 565-40-27. Type the short form; DAA Pay fills in the zeros (565-0000000000040-27) and shows the bank name.',
@@ -1577,6 +1580,7 @@ async function advance(x, status) {
 // ---------- email to the initiator when a payment is marked Paid (sent from the viewer's Gmail)
 function mailWhy(e) { return { server_not_connected: 'Gmail is not connected to your claude.ai account', consent_required: 'Gmail was not allowed for this app', not_granted: 'Gmail was not allowed for this app', tool_error: 'Gmail refused the message' }[e && e.code] || String((e && (e.message || e.code)) || 'unknown error').replace(/\.+$/, ''); }
 async function mailPaid(list) {
+  benNotice(list, 'paid');
   var me = G.me, at = stamp();
   var mark = function (ids, m) { ids.forEach(function (id) { patch('items', id, { paidMail: m }); }); };
   var groups = {}, noInit = [];
@@ -1647,6 +1651,7 @@ function paymentLines(x) {
   return rows;
 }
 async function mailPayment(list) {
+  benNotice(list, 'sent');
   var me = G.me, ids = list.map(function (x) { return x.id; });
   var mark = function (m) { ids.forEach(function (id) { patch('items', id, { mail: m }); }); };
   var allOms = G.data.users.filter(function (u) { return u.role === 'om' && u.active !== false && u.email; });
@@ -1749,6 +1754,7 @@ function Drawer() {
         ${needs && html`<${PendingDetails} x=${x} />`}
         ${x.kind !== 'invoice' && html`<${RequestDetails} x=${x} />`}
 
+        <${BenEmailBox} x=${x} />
         <${LinkedBox} x=${x} />
         <${History} x=${x} />
       </div>
@@ -1835,6 +1841,30 @@ function DenialHistory(p) {
   return html`<details class="card pad"><summary style="cursor: pointer; font-weight: 600; min-height: 28px">Earlier denials (${ds.length})</summary>
     <ol style="margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 13px">${ds.slice().reverse().map(function (d, i) { return html`<li key=${i}><b>Denied${d.by ? ' by ' + userName(d.by) : ''}${d.at ? ' · ' + d.at : ''}:</b> ${d.reason || '—'}<div class="muted">Corrected by ${userName(d.fixedBy)} · ${d.fixedAt || ''}${d.note ? ' · ' + d.note : ''}</div></li>`; })}</ol></details>`;
 }
+// Beneficiary email: gets a notice when the payment is sent and when it is paid (sent by the server).
+function BenEmailBox(p) {
+  var x = p.x, me = G.me, st = x.status || 0, es = useState(null), ed = es[0], setEd = es[1];
+  var canEdit = isTop(me.role) || me.role === 'om' || me.role === 'am' || (x.by === me.id && st !== 4);
+  var on = x.benNotify !== false, bm = x.benMail || {};
+  async function save() {
+    var v = ed.trim(); if (v && !emailOk(v)) { toast('Check the email address.', true); return; }
+    if (await patch('items', x.id, { benEmail: v })) {
+      if (v && x.kind === 'invoice' && x.pib) upsertBen({ pib: x.pib, name: x.title, email: v });
+      logEv('edit', 'Beneficiary email on ' + pqNo(x.pqn) + ' set to ' + (v || 'none'), x.id); setEd(null);
+    }
+  }
+  var line = function (k, label) { var m = bm[k]; return m ? html`<div style="font-size: 12px">${label}: ${m.ok ? 'emailed ' + m.at + ' to ' + m.to : 'not sent (' + m.at + '): ' + m.err}</div>` : null; };
+  async function resend(k) { try { var r = await window.daa.post('/api/notify/beneficiary', { ids: [x.id], event: k, again: true }); toast(r.sent ? 'Notice emailed to ' + x.benEmail + '.' : (r.why || 'Not sent.'), !r.sent); } catch (e) { toast(e.message, true); } }
+  return html`<div class="card pad stack" style="gap: 8px">
+    <div class="row" style="justify-content: space-between"><b>${x.kind === 'invoice' ? 'Supplier email' : 'Beneficiary email'}</b>${canEdit && ed == null && html`<button class="btn q sm" onClick=${function () { setEd(x.benEmail || ''); }}>${x.benEmail ? 'Edit' : 'Add email'}</button>`}</div>
+    ${ed == null ? html`<div style="overflow-wrap: anywhere">${x.benEmail || html`<span class="muted">None. Add one to send payment notices.</span>`}</div>`
+      : html`<div class="row" style="align-items: flex-end"><div style="flex: 1 1 240px"><${Field} label="Email"><input id=${'bem-' + x.id} class="inp" type="email" value=${ed} onInput=${function (e) { setEd(e.target.value); }} /><//></div><button class="btn sm" onClick=${save}>Save</button><button class="btn q sm" onClick=${function () { setEd(null); }}>Cancel</button></div>`}
+    ${x.benEmail && html`<label class="row" style="gap: 8px; font-size: 14px"><input type="checkbox" checked=${on} disabled=${!canEdit} onChange=${function (e) { patch('items', x.id, { benNotify: e.target.checked }); }} /> Email them when it is sent to payment and when it is paid</label>`}
+    ${line('sent', 'Sent to payment notice')}${line('paid', 'Paid notice')}
+    ${x.benEmail && on && (isTop(me.role) || me.role === 'om') && (st === 3 || st === 4) && html`<div class="row"><button class="btn q sm" onClick=${function () { resend(st === 4 ? 'paid' : 'sent'); }}>${bm[st === 4 ? 'paid' : 'sent'] ? 'Send the notice again' : 'Send the notice now'}</button></div>`}
+  </div>`;
+}
+function benNotice(list, event) { var ids = list.filter(function (x) { return x.benEmail && x.benNotify !== false; }).map(function (x) { return x.id; }); if (ids.length) window.daa.post('/api/notify/beneficiary', { ids: ids, event: event }).catch(function () {}); }
 function LinkedBox(p) {
   var x = p.x, me = G.me, st = x.status || 0;
   var canEdit = isTop(me.role) || ((me.role === 'am' || x.by === me.id) && (st <= 2 || st === 5));
@@ -1978,12 +2008,12 @@ function blankDraft(g) {
 }
 function draftOk(dr) { return !!dr && !!dr.name.trim() && parseNum(dr.amount) > 0; }
 function draftFields(dr) {
-  return { name: dr.name.trim(), pib: dr.pib.trim(), address: dr.address.trim(), account: (dr.account || '').trim(), number: dr.number.trim(), iso: dr.date || '', date: isoToDate(dr.date), amount: parseNum(dr.amount),
+  return { email: (dr.email || '').trim(), name: dr.name.trim(), pib: dr.pib.trim(), address: dr.address.trim(), account: (dr.account || '').trim(), number: dr.number.trim(), iso: dr.date || '', date: isoToDate(dr.date), amount: parseNum(dr.amount),
     items: dr.items.filter(function (it) { return it.name.trim(); }).map(function (it) { var q = parseNum(it.qty || '1') || 1, t = parseNum(it.total); return { name: it.name.trim(), qty: q, price: isNaN(t) ? null : t / q, total: isNaN(t) ? null : t }; }) };
 }
 function DraftForm(p) {
   var dr = p.dr, set = p.set, id = p.idp;
-  var f = function (k) { return function (e) { var v = e.target.value, n = Object.assign({}, dr); n[k] = v; if (k === 'pib') { var b = benByPib(v.trim()); if (b) { if (!n.name.trim()) n.name = b.name; if (!n.address.trim()) n.address = b.address || ''; if (!(n.account || '').trim()) n.account = b.account || ''; } } set(n); }; };
+  var f = function (k) { return function (e) { var v = e.target.value, n = Object.assign({}, dr); n[k] = v; if (k === 'pib') { var b = benByPib(v.trim()); if (b) { if (!n.name.trim()) n.name = b.name; if (!n.address.trim()) n.address = b.address || ''; if (!(n.email || '').trim()) n.email = b.email || ''; if (!(n.account || '').trim()) n.account = b.account || ''; } } set(n); }; };
   var itf = function (i, k) { return function (e) { var its = dr.items.slice(); its[i] = Object.assign({}, its[i]); its[i][k] = e.target.value; set(Object.assign({}, dr, { items: its })); }; };
   var match = benByPib(dr.pib.trim());
   return html`<div class="stack" style="gap: 10px">
@@ -1995,6 +2025,7 @@ function DraftForm(p) {
       <${Field} label="Date"><input id=${id + '-date'} class="inp" type="date" value=${dr.date} onInput=${f('date')} /><//>
       <${Field} label="Amount (EUR)" req><input id=${id + '-amt'} class="inp num" inputmode="decimal" placeholder="0,00" value=${dr.amount} onInput=${f('amount')} /><//>
       <${Field} label="Address" wide><input id=${id + '-adr'} class="inp" value=${dr.address} onInput=${f('address')} /><//>
+      <${Field} label="Supplier email" wide hint="Optional, for payment notices"><input id=${id + '-email'} class="inp" type="email" value=${dr.email || ''} onInput=${f('email')} /><//>
     </div>
     ${match && html`<div style="font-size: 12px">In the beneficiary archive: <b>${match.name}</b></div>`}
     <b style="font-size: 12px">Items</b>
@@ -2044,6 +2075,7 @@ function AddModal() {
     return { name: '', src: 'not found, please enter it', from: 'none' };
   }
   var inQueue = {}; G.data.items.forEach(function (x) { if (x.iic) inQueue[x.iic] = true; });
+  function emailDefault(q) { if (q.emailEdit != null) return q.emailEdit; var b = benByPib(q.tin); return b && b.email ? b.email : ''; }
   function acctDefault(q) { if (q.acctEdit != null) return q.acctEdit; var t = q.text || {}; if (t.account) return t.account; var b = benByPib(q.tin); return b && b.account ? b.account : ''; }
   function acctSrc(q) { if (q.acctEdit != null) return 'edited'; if ((q.text || {}).account) return 'read from the invoice'; var b = benByPib(q.tin); return b && b.account ? 'from the beneficiary archive' : 'not found on the invoice'; }
 
@@ -2058,6 +2090,7 @@ function AddModal() {
     if ((k === 'refund' || k === 'contract') && !(amt > 0)) e.push('amount');
     if (k === 'contract' && !form.legalRef.trim()) e.push('legal reference');
     if (k === 'contract' && !form.payDate) e.push('date');
+    if ((k === 'refund' || k === 'contract') && (form.benEmail || '').trim() && !emailOk(form.benEmail)) e.push('a valid beneficiary email (or leave it empty)');
     if (form.clientId === '__new' && !form.newClient.trim()) e.push('new client name');
     if (form.projectId === '__new' && !form.newProject.trim()) e.push('new project name');
     if (!form.ceId && form.estNumber.trim() && !files.estimate) e.push('cost estimate document');
@@ -2086,8 +2119,8 @@ function AddModal() {
             var it;
             if (draftOk(s.manual)) {
               var mf = draftFields(s.manual);
-              it = Object.assign({}, common, mf.iso ? { iso: mf.iso, date: mf.date } : {}, { kind: 'invoice', manual: true, supplierSrc: 'manual', title: mf.name, pib: mf.pib, address: mf.address, account: mf.account ? acctNorm(mf.account) : '', bank: acctOk(mf.account) ? bankName(mf.account) : '', acctConfirmed: acctOk(mf.account) && !acctValid(mf.account), number: mf.number || 'Manual entry', amount: mf.amount, lineItems: mf.items }); Object.assign(it, vatSplit(it.amount, []));
-              if (mf.pib) await upsertBen({ pib: mf.pib, name: mf.name, address: mf.address, account: acctOk(mf.account) ? acctNorm(mf.account) : '' });
+              it = Object.assign({}, common, mf.iso ? { iso: mf.iso, date: mf.date } : {}, { kind: 'invoice', manual: true, benEmail: emailOk(mf.email) ? mf.email : '', supplierSrc: 'manual', title: mf.name, pib: mf.pib, address: mf.address, account: mf.account ? acctNorm(mf.account) : '', bank: acctOk(mf.account) ? bankName(mf.account) : '', acctConfirmed: acctOk(mf.account) && !acctValid(mf.account), number: mf.number || 'Manual entry', amount: mf.amount, lineItems: mf.items }); Object.assign(it, vatSplit(it.amount, []));
+              if (mf.pib) await upsertBen(Object.assign({ pib: mf.pib, name: mf.name, address: mf.address, account: acctOk(mf.account) ? acctNorm(mf.account) : '' }, emailOk(mf.email) ? { email: mf.email } : {}));
             } else it = Object.assign({}, common, { kind: 'invoice', title: s.name, number: 'Needs details', amount: null, guess: s.manual || null });
             created.push(Object.assign(it, { fileId: fileId, fileName: s.name }));
             continue;
@@ -2097,9 +2130,10 @@ function AddModal() {
             if (seen[q.iic]) continue;
             seen[q.iic] = true;
             var tx = q.text || {}, dn = supplierDefault(q), nm = (q.nameEdit != null ? q.nameEdit : dn.name).trim(), iso = q.crtd.slice(0, 10), av = acctDefault(q), avOk = acctOk(av);
-            if (nm) await upsertBen({ pib: q.tin, name: nm, address: tx.address || '', pdv: tx.pdv || '', account: avOk ? acctNorm(av) : '' });
+            var qe = emailDefault(q).trim(); if (qe && !emailOk(qe)) qe = '';
+            if (nm) await upsertBen(Object.assign({ pib: q.tin, name: nm, address: tx.address || '', pdv: tx.pdv || '', account: avOk ? acctNorm(av) : '' }, qe ? { email: qe } : {}));
             created.push(Object.assign({}, common, { kind: 'invoice', title: nm || 'Supplier PIB ' + q.tin, supplierSrc: q.nameEdit != null ? 'manual' : dn.from,
-              pib: q.tin, pdv: tx.pdv || '', address: tx.address || '', due: tx.due || '', account: av.trim() ? acctNorm(av) : '', acctConfirmed: avOk && !acctValid(av) && q.acctEdit != null, bank: avOk ? bankName(av, q.acctEdit == null ? tx.bank : '') : '', lineItems: tx.items || [], number: tx.number || 'Fiscal no. ' + q.ord,
+              pib: q.tin, pdv: tx.pdv || '', address: tx.address || '', benEmail: qe, due: tx.due || '', account: av.trim() ? acctNorm(av) : '', acctConfirmed: avOk && !acctValid(av) && q.acctEdit != null, bank: avOk ? bankName(av, q.acctEdit == null ? tx.bank : '') : '', lineItems: tx.items || [], number: tx.number || 'Fiscal no. ' + q.ord,
               amount: isNaN(q.prc) ? null : q.prc }, vatSplit(isNaN(q.prc) ? null : q.prc, tx.money), { iso: iso, date: isoToDate(iso), time: q.crtd.slice(11, 19),
               iic: q.iic, crtd: q.crtd, ord: q.ord, bu: q.bu, cr: q.cr, sw: q.sw, qrUrl: q.url, fileId: fileId, fileName: s.name, pdfPages: q.page == null ? null : [q.page] }));
           }
@@ -2114,9 +2148,10 @@ function AddModal() {
         fields = fields.filter(function (f) { return f.value && String(f.value).trim(); });
         var att = [];
         for (var a = 0; a < files.attach.length; a++) att.push({ name: files.attach[a].name, fileId: await uploadFile(files.attach[a]) });
-        created.push(Object.assign({}, common, { kind: k, title: form.beneficiary.trim() || 'Payment by contract', number: k === 'contract' ? form.legalRef.trim() : 'Refund request', amount: amt, fields: fields, attachments: att }));
+        created.push(Object.assign({}, common, { kind: k, title: form.beneficiary.trim() || 'Payment by contract', number: k === 'contract' ? form.legalRef.trim() : 'Refund request', amount: amt, fields: fields, attachments: att, benEmail: emailOk(form.benEmail) ? form.benEmail.trim() : '' }));
         if (form.saveBen && form.beneficiary.trim()) {
           var bp = { name: form.beneficiary.trim(), payType: form.payType, account: acctOk(form.account) ? acctNorm(form.account) : form.account, iban: form.iban, swift: form.swift, jmbg: form.jmbg };
+          if (emailOk(form.benEmail)) bp.email = form.benEmail.trim();
           if (form.benId) await patch('bens', form.benId, bp); else await upsertBen(Object.assign({ pib: /^\d{8}$/.test(form.jmbg.trim()) ? form.jmbg.trim() : '' }, bp));
         }
       }
@@ -2168,6 +2203,7 @@ function AddModal() {
                 return html`<div key=${qi} class="subcard" style="gap: 6px">
                   <${Field} label=${html`Supplier name <span class="muted" style="font-weight: 400">· ${q.nameEdit != null ? 'edited, will be saved to the archive' : dn.src}</span>`}><input class="inp" placeholder="Enter the supplier name" value=${q.nameEdit != null ? q.nameEdit : dn.name} onInput=${function (e) { var fd = s.found.slice(); fd[qi] = Object.assign({}, q, { nameEdit: e.target.value }); upd(s.key, { found: fd }); }} /><//>
                   <${Field} label=${html`Bank account <span class="muted" style="font-weight: 400">· ${acctSrc(q)}</span>`} hint=${acctHint(acctDefault(q), q.acctEdit == null ? (q.text || {}).bank : '')}><input onBlur=${function (e) { if (acctOk(e.target.value)) { var fd = s.found.slice(); fd[qi] = Object.assign({}, q, { acctEdit: acctNorm(e.target.value) }); upd(s.key, { found: fd }); } }} class="inp mono" inputmode="numeric" placeholder="510-0000000000000-00" value=${acctDefault(q)} onInput=${function (e) { var fd = s.found.slice(); fd[qi] = Object.assign({}, q, { acctEdit: e.target.value }); upd(s.key, { found: fd }); }} /><//>
+                  <${Field} label=${html`Supplier email <span class="muted" style="font-weight: 400">· ${q.emailEdit != null ? 'edited, will be saved to the archive' : emailDefault(q) ? 'from the beneficiary archive' : 'optional, for payment notices'}</span>`}><input class="inp" type="email" placeholder="name@company.me" value=${emailDefault(q)} onInput=${function (e) { var fd = s.found.slice(); fd[qi] = Object.assign({}, q, { emailEdit: e.target.value }); upd(s.key, { found: fd }); }} /><//>
                   <div class="num" style="font-size: 12px; color: var(--ink-2)">${(t.number ? t.number + ' · ' : '') + (t.items && t.items.length ? t.items.length + (t.items.length === 1 ? ' item · ' : ' items · ') : '') + 'PIB ' + q.tin + ' · ' + isoToDate(q.crtd.slice(0, 10)) + ' · ' + fmt(q.prc) + ' €' + (inQueue[q.iic] ? ' · already in queue, skipped' : '')}</div>
                 </div>`;
               })}
@@ -2178,10 +2214,11 @@ function AddModal() {
 
         ${isReq && html`<div class="stack">
           <${Field} label="Beneficiary archive" hint=${G.data.bens.length ? G.data.bens.length + ' saved by the team. Choosing one fills in the payment details.' : 'Nobody saved yet. Beneficiaries are saved here automatically when you submit, and everyone can choose them next time.'}>
-            <select id="rq-ben" class="inp" value=${form.benId} onChange=${function (e) { var b = byId(G.data.bens, e.target.value); setForm(Object.assign({}, form, b ? { benId: b.id, beneficiary: b.name, payType: b.payType || 'domestic', account: b.account || '', iban: b.iban || '', swift: b.swift || '', jmbg: b.jmbg || b.pib || '' } : { benId: '', beneficiary: '', payType: 'domestic', account: '', iban: '', swift: '', jmbg: '' })); }}>
+            <select id="rq-ben" class="inp" value=${form.benId} onChange=${function (e) { var b = byId(G.data.bens, e.target.value); setForm(Object.assign({}, form, b ? { benId: b.id, beneficiary: b.name, benEmail: b.email || '', payType: b.payType || 'domestic', account: b.account || '', iban: b.iban || '', swift: b.swift || '', jmbg: b.jmbg || b.pib || '' } : { benId: '', beneficiary: '', benEmail: '', payType: 'domestic', account: '', iban: '', swift: '', jmbg: '' })); }}>
               <option value="">+ New beneficiary</option>${G.data.bens.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (b) { return html`<option value=${b.id}>${b.name} · ${b.account || b.iban || (b.pib ? 'PIB ' + b.pib : 'no account')}</option>`; })}
             </select><//>
           <${Field} label="Beneficiary name and surname" req=${k === 'refund'}><input id="rq-name" class="inp" value=${form.beneficiary} onInput=${on('beneficiary')} /><//>
+          <${Field} label="Beneficiary email" hint="Optional. They get a short notice when the payment is sent and when it is paid."><input id="rq-email" class="inp" type="email" placeholder="name@example.com" value=${form.benEmail || ''} onInput=${on('benEmail')} /><//>
           <fieldset style="border: 0; margin: 0; padding: 0" class="stack"><legend style="padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 500">Type of payment</legend>
             <div class="row">
               <label class=${'seg' + (form.payType === 'domestic' ? ' on' : '')}><input type="radio" name="pt" checked=${form.payType === 'domestic'} onChange=${function () { setForm(Object.assign({}, form, { payType: 'domestic' })); }} /> Domestic</label>
@@ -2337,9 +2374,9 @@ function Beneficiaries() {
   var ds = useState(null), delId = ds[0], setDel = ds[1];
   var list = G.data.bens.filter(function (b) {
     var t = q.trim().toLowerCase();
-    return !t || [b.name, b.pib, b.account, b.iban, b.address].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; });
+    return !t || [b.name, b.pib, b.account, b.iban, b.address, b.email].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; });
   }).sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
-  function open(b) { setDel(null); setEd(b ? { id: b.id, name: b.name || '', pib: b.pib || '', account: b.account || '', address: b.address || '', err: '' } : { id: null, name: '', pib: '', account: '', address: '', err: '' }); }
+  function open(b) { setDel(null); setEd(b ? { id: b.id, name: b.name || '', pib: b.pib || '', account: b.account || '', address: b.address || '', email: b.email || '', err: '' } : { id: null, name: '', pib: '', account: '', address: '', email: '', err: '' }); }
   async function save(e) {
     e.preventDefault();
     var name = ed.name.trim(), pib = ed.pib.trim(), acc = ed.account.trim(), adr = ed.address.trim(), fail = function (m) { setEd(Object.assign({}, ed, { err: m })); };
@@ -2347,7 +2384,8 @@ function Beneficiaries() {
     if (pib && !/^(\d{8}|\d{13})$/.test(pib)) return fail('PIB has 8 digits (JMBG has 13). Check the number.');
     if (pib && G.data.bens.some(function (b) { return b.pib === pib && b.id !== ed.id; })) return fail('Another beneficiary already has PIB ' + pib + '.');
     if (acc && !acctOk(acc)) return fail('Use the format 5XX-XXXXXXXXXXXXX-XX for the account number.');
-    var data = { name: name, pib: pib, account: acc ? acctNorm(acc) : '', bank: acc ? bankName(acc) : '', address: adr, payType: 'domestic', updatedAt: stamp(), updatedBy: me.id };
+    var em = (ed.email || '').trim(); if (em && !emailOk(em)) return fail('Check the email address.');
+    var data = { name: name, pib: pib, account: acc ? acctNorm(acc) : '', bank: acc ? bankName(acc) : '', address: adr, email: em, payType: 'domestic', updatedAt: stamp(), updatedBy: me.id };
     var ok = ed.id ? await patch('bens', ed.id, data) : await put('bens', uid('b'), Object.assign({ iban: '', swift: '', jmbg: pib, createdAt: stamp(), createdBy: me.id }, data));
     if (ok) { toast(ed.id ? 'Saved ' + name + '.' : 'Added ' + name + '.'); logEv('data', (ed.id ? 'Edited beneficiary ' : 'Added beneficiary ') + name + (pib ? ' (PIB ' + pib + ')' : '')); setEd(null); }
   }
@@ -2358,6 +2396,7 @@ function Beneficiaries() {
       <${Field} label="PIB"><input id="bn-pib" class="inp mono" inputmode="numeric" value=${ed.pib} onInput=${inputOn(ed, setEd, 'pib')} /><//>
       <${Field} label="Bank account" hint=${ed.account.trim() ? acctHint(ed.account, '') : 'Montenegrin account, 5XX-…-XX'}><input onBlur=${function (e) { if (acctOk(e.target.value)) setEd(Object.assign({}, ed, { account: acctNorm(e.target.value), err: '' })); }} id="bn-acct" class="inp mono" inputmode="numeric" placeholder="510-0000000000000-00" value=${ed.account} onInput=${inputOn(ed, setEd, 'account')} /><//>
       <${Field} label="Address" wide><input id="bn-adr" class="inp" value=${ed.address} onInput=${inputOn(ed, setEd, 'address')} /><//>
+      <${Field} label="Email" wide hint="They get a short notice when a payment to them is sent and when it is paid."><input id="bn-email" class="inp" type="email" placeholder="name@company.me" value=${ed.email} onInput=${inputOn(ed, setEd, 'email')} /><//>
     </div>
     ${ed.err && html`<div class="alert e" role="alert">${ed.err}</div>`}
     <div class="row"><button class="btn" type="submit">${ed.id ? 'Save changes' : 'Add beneficiary'}</button><button class="btn q" type="button" onClick=${function () { setEd(null); }}>Cancel</button></div>
@@ -2375,6 +2414,7 @@ function Beneficiaries() {
         var ok = !b.account || acctValid(b.account);
         return html`<article key=${b.id} class=${'mcard' + (ed && ed.id === b.id ? ' sel' : '')}>
           <div class="mtop"><b style="font-size: 15px; word-break: break-word; flex: 1 1 auto; min-width: 0">${b.name}</b><span class="muted num" style="white-space: nowrap">${benUses(b)} in queue</span></div>
+          ${b.email && html`<div class="mmeta" style="overflow-wrap: anywhere">${b.email}</div>`}
           <div class="mmeta"><span class="muted">PIB </span><span class="mono">${b.pib || '—'}</span>${b.createdBy && html`<span class="muted"> · Added by ${userName(b.createdBy)}</span>`}</div>
           <div class="mmeta">${b.account ? html`<span class="mono">${b.account}</span> · ${b.bank || bankName(b.account)}${ok ? '' : ' · control digits differ from the usual check'}` : b.iban ? html`<span class="mono">${b.iban}</span> · IBAN` : html`<span class="muted">No bank account</span>`}</div>
           ${b.address && html`<div class="mmeta">${b.address}</div>`}
@@ -2390,7 +2430,7 @@ function Beneficiaries() {
             <td style="padding-left: 16px"><b>${b.name}</b>${b.createdBy && html`<div class="muted" style="font-size: 12px">Added by ${userName(b.createdBy)}</div>`}</td>
             <td class="mono">${b.pib || '—'}</td>
             <td>${b.account ? html`<span class="mono">${b.account}</span><div class="muted" style="font-size: 12px">${b.bank || bankName(b.account)}${ok ? '' : ' · control digits differ from the usual check'}</div>` : (b.iban ? html`<span class="mono">${b.iban}</span><div class="muted" style="font-size: 12px">IBAN${b.swift ? ' · ' + b.swift : ''}</div>` : html`<span class="muted">—</span>`)}</td>
-            <td style="max-width: 280px">${b.address || html`<span class="muted">—</span>`}</td>
+            <td style="max-width: 280px">${b.address || html`<span class="muted">—</span>`}${b.email ? html`<div class="muted" style="font-size: 12px; overflow-wrap: anywhere">${b.email}</div>` : ''}</td>
             <td class="r num">${benUses(b)}</td>
             <td style="padding-right: 16px; white-space: nowrap; text-align: right">
               ${canEdit && html`<button class="btn q sm" onClick=${function () { open(b); }}>Edit</button>`}
