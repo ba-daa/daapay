@@ -3,7 +3,7 @@ import { vapidKeys, sendPush } from './push.js';
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.6.4';
+const APP_VERSION = '0.6.5';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -170,7 +170,7 @@ function publicUser(u) {
 function itemVisible(me, x, usersById) {
   if (isTop(me.role) || me.role === 'om') return true;
   if (x.by === me.id) return true;
-  if (me.role === 'am') { const a = usersById[x.by]; return !!a && a.role === 'aa' && (!a.managerId || a.managerId === me.id); }
+  if (me.role === 'am') { const a = usersById[x.by]; if (!a || a.role !== 'aa') return false; const m = mgrsOf(a); return !m.length || m.includes(me.id); }
   return false;
 }
 // Personal notification settings: user.notify = { kind: { app: false, email: false } }; anything not set is on.
@@ -221,6 +221,12 @@ async function pushNotif(env, n) {
   return pushTo(env, to, { title: 'DAA Pay · ' + (PUSH_TITLE[kind] || 'DAA Pay'), body: String(n.text || '').slice(0, 240), url, tag: n.id || '', urgent: kind === 'critical' || kind === 'payment' });
 }
 const wants = (u, kind, ch) => !(u && u.notify && u.notify[kind] && u.notify[kind][ch || 'email'] === false);
+// An assistant's account managers: a list of ids; an empty list means all account managers.
+function mgrsOf(u) { return Array.isArray(u.managerIds) ? u.managerIds : u.managerId ? [u.managerId] : []; }
+async function cleanMgrs(env, ids) {
+  const ams = new Set((await allDocs(env, 'users')).filter((u) => u.role === 'am' && u.active !== false).map((u) => u.id));
+  return [...new Set((Array.isArray(ids) ? ids : []).map(String))].filter((i) => ams.has(i));
+}
 function notifVisible(me, n) {
   if (n.to === me.id || n.to === 'role:' + me.role) return true;
   if (n.to === 'role:review') return isTop(me.role) && n.from !== me.id;
@@ -441,14 +447,16 @@ async function writeDoc(env, me, b, ctx) {
       for (const k of NOTIFY_KINDS) { const v = data.notify && data.notify[k]; if (v && typeof v === 'object') { clean[k] = {}; if (v.app === false) clean[k].app = false; if (v.email === false) clean[k].email = false; if (v.push === false) clean[k].push = false; } }
       data.notify = clean;
     }
-    const topKeys = ['role', 'active', 'managerId', 'totp'];
-    if (me.id === id && keys.every((k) => selfKeys.includes(k))) { /* own profile */ }
+    const topKeys = ['role', 'active', 'managerId', 'managerIds', 'totp'];
+    if ('managerIds' in data) { data.managerIds = await cleanMgrs(env, data.managerIds); data.managerId = ''; }
+    if (me.id === id && keys.every((k) => selfKeys.concat(me.role === 'aa' ? ['managerIds'] : []).includes(k))) { /* own profile; assistants choose their account managers */ }
     else if (top && me.id !== id && keys.every((k) => topKeys.concat(selfKeys).includes(k))) {
       if (data.totp && (data.totp.on || data.totp.secret)) deny('Two-step sign-in can only be turned on by the person themselves.');
       if (data.role && !ROLE[data.role]) fail(400, 'Unknown role.');
     } else deny();
     next = merge(cur, data);
     if ('notify' in data) next.notify = data.notify;
+    if ('managerIds' in data) { next.managerIds = data.managerIds; next.managerId = ''; }
     if (data.totp) next.totp = { on: false };
   } else if (col === 'regs') {
     if (op !== 'delete' || !(top || role === 'am')) deny();
@@ -537,9 +545,9 @@ async function createUser(env, me, b) {
   if (pass && pass.length < 8) fail(400, 'A starting password needs at least 8 characters. Or leave it empty to send an invitation link.');
   const users = await allDocs(env, 'users');
   if (users.some((u) => (u.email || '').toLowerCase() === email)) fail(400, 'An account with this email already exists.');
-  const managerId = role === 'aa' ? (me.role === 'am' ? me.id : t('managerId')) : '';
+  const managerIds = role === 'aa' ? (me.role === 'am' ? [me.id] : await cleanMgrs(env, b.managerIds || (t('managerId') ? [t('managerId')] : []))) : [];
   const id = rid('u');
-  const u = { first: t('first'), last: t('last'), position: t('position'), email, role, managerId, active: true, createdAt: podgoricaStamp().short, createdBy: me.id };
+  const u = { first: t('first'), last: t('last'), position: t('position'), email, role, managerIds, active: true, createdAt: podgoricaStamp().short, createdBy: me.id };
   if (pass) u.pw = await hashPw(pass);
   await putDoc(env, 'users', id, u);
   await logEvent(env, me.id, 'users', 'Created account ' + email + ' as ' + ROLE[role] + (pass ? '' : ' (invitation)'));
@@ -553,7 +561,7 @@ async function approveReg(env, me, b) {
   const role = allowed.includes(b.role) ? b.role : 'aa';
   const users = await allDocs(env, 'users');
   if (users.some((u) => (u.email || '').toLowerCase() === r.email)) fail(400, 'An account with ' + r.email + ' already exists.');
-  await putDoc(env, 'users', rid('u'), { first: r.first, last: r.last, position: r.position, email: r.email, role, managerId: role === 'aa' && me.role === 'am' ? me.id : '', pw: r.pw, active: true, createdAt: podgoricaStamp().short, createdBy: me.id });
+  await putDoc(env, 'users', rid('u'), { first: r.first, last: r.last, position: r.position, email: r.email, role, managerIds: role === 'aa' && me.role === 'am' ? [me.id] : [], pw: r.pw, active: true, createdAt: podgoricaStamp().short, createdBy: me.id });
   await delDoc(env, 'regs', String(b.id));
   await logEvent(env, me.id, 'users', 'Approved access for ' + r.first + ' ' + r.last + ' (' + r.email + ') as ' + ROLE[role]);
   if (env.RESEND_API_KEY) await sendMail(env, mailOf(env, [r.email], 'Welcome to DAA Pay: your access is approved', 'Welcome to DAA Pay, ' + r.first,
@@ -701,7 +709,7 @@ async function notifyNew(env, me, b) {
   if (!items.length) return json({ ok: true, emailed: false });
   const users = (await allDocs(env, 'users')).filter((u) => u.active !== false && u.email && u.id !== me.id && wants(u, 'review'));
   const to = new Set(users.filter((u) => isTop(u.role)).map((u) => u.email));
-  if (me.role === 'aa') users.filter((u) => u.role === 'am' && (!me.managerId || u.id === me.managerId)).forEach((u) => to.add(u.email));
+  if (me.role === 'aa') { const m = mgrsOf(me); users.filter((u) => u.role === 'am' && (!m.length || m.includes(u.id))).forEach((u) => to.add(u.email)); }
   if (b.resubmit) {
     for (const x of items) { const d = (x.denials || []).slice(-1)[0]; const u = d && users.find((v) => v.id === d.by); if (u) to.add(u.email); }
     if (!to.size) return json({ ok: true, emailed: false });

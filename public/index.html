@@ -205,6 +205,10 @@ dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break:
 .inp.off { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .ce-tl { justify-content: space-between; flex-wrap: nowrap; }
 .ce-ed { padding-bottom: 40px; }
+.mgrbtn { text-align: left; background-image: var(--chev); background-repeat: no-repeat; background-position: right 14px center; background-size: 12px 8px; padding-right: 40px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mgri { gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; flex-wrap: nowrap; }
+.mgri:hover { background: var(--soft); }
+.mgri input { width: 18px; height: 18px; accent-color: var(--ink); }
 .nset th.c, .nset td.c { text-align: center; width: 72px; }
 .nset td { padding-top: 10px; padding-bottom: 10px; }
 .nset input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ink); }
@@ -343,7 +347,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.6.4';
+var APP_VERSION = '0.6.5';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -772,6 +776,23 @@ function VatBox(p) {
 function openProject(clientId, projectId) { if (!clientId && !projectId) return; setUi({ tab: 'ce', ce: null, ceView: 'projects', open: null, pjOpen: projectId || null, pjFocus: projectId ? 'pj-' + projectId : 'cl-' + clientId }); }
 var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 function emailOk(v) { return EMAIL_RE.test(String(v || '').trim()); }
+// Account managers of an assistant: list of ids; empty = all account managers.
+function mgrsOf(u) { return !u ? [] : Array.isArray(u.managerIds) ? u.managerIds : u.managerId ? [u.managerId] : []; }
+function mgrLabel(ids) { var ams = G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; }), sel = ams.filter(function (u) { return ids.indexOf(u.id) >= 0; }); return !sel.length ? 'All account managers' : sel.map(nameOf).join(', '); }
+function MgrPicker(p) {
+  var ams = G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; }), ids = (p.value || []).filter(function (i) { return ams.some(function (u) { return u.id === i; }); });
+  var os = useState(false), open = os[0], setOpen = os[1], ref = useRef(null);
+  useEffect(function () { if (!open) return; var h = function (e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('pointerdown', h); return function () { document.removeEventListener('pointerdown', h); }; }, [open]);
+  var set = function (next) { p.onChange(next.length === ams.length ? [] : next); };
+  return html`<div ref=${ref} class="mgrp" style="position: relative; display: inline-block; min-width: ${p.wide ? '100%' : '220px'}">
+    <button type="button" class=${'inp' + (p.small ? ' sm' : '') + ' mgrbtn'} aria-haspopup="true" aria-expanded=${open} aria-label=${p.label || 'Account managers'} onClick=${function () { setOpen(!open); }}>${mgrLabel(ids)}</button>
+    ${open && html`<div class="pop" style="left: 0; right: auto; min-width: 100%; width: max-content; max-width: 320px; padding: 6px" role="group" aria-label=${p.label || 'Account managers'}>
+      <label class="row mgri"><input type="checkbox" checked=${!ids.length} onChange=${function () { p.onChange([]); }} /> <b>All account managers</b></label>
+      ${ams.map(function (u) { var on = ids.indexOf(u.id) >= 0; return html`<label key=${u.id} class="row mgri"><input type="checkbox" checked=${on} onChange=${function () { set(on ? ids.filter(function (i) { return i !== u.id; }) : ids.concat([u.id])); }} /> ${nameOf(u)}</label>`; })}
+      ${!ams.length && html`<div class="muted" style="padding: 8px 10px; font-size: 13px">No account managers yet.</div>`}
+    </div>`}
+  </div>`;
+}
 function projectName(id) { var p = byId(G.data.projects, id); return p ? p.name : ''; }
 // DAA cost estimates that a payment can be linked to (approved first, then newest).
 function ceOptions(clientId, projectId) {
@@ -1412,7 +1433,7 @@ function itemsVisible() {
     if (isTop(role) || role === 'om') return true;
     if (x.by === me.id) return true;
     // Account managers also see requests from their account assistants (and from assistants with no manager yet).
-    if (role === 'am') { var a = byId(G.data.users, x.by); return !!a && a.role === 'aa' && (!a.managerId || a.managerId === me.id); }
+    if (role === 'am') { var a = byId(G.data.users, x.by); if (!a || a.role !== 'aa') return false; var m = mgrsOf(a); return !m.length || m.indexOf(me.id) >= 0; }
     return false;
   });
 }
@@ -2160,7 +2181,7 @@ function AddModal() {
       window.daa.post('/api/notify/new', { ids: ids }).catch(function () {});
       notify(created.map(function (it, n) { return { kind: 'review', to: 'role:review', from: me.id, itemId: ids[n], text: nameOf(me) + ' added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; }));
       if (me.role === 'aa') {
-        var mgrs = me.managerId ? [me.managerId] : G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; }).map(function (u) { return u.id; });
+        var mgrs = mgrsOf(me).length ? mgrsOf(me) : G.data.users.filter(function (u) { return u.role === 'am' && u.active !== false; }).map(function (u) { return u.id; });
         mgrs.forEach(function (mid) { notify(created.map(function (it, n) { return { kind: 'review', to: mid, from: me.id, itemId: ids[n], text: nameOf(me) + ' (your assistant) added ' + pqNo(pq + n) + ' · ' + it.title + ' for review.' }; })); });
       }
       created.forEach(function (it, n) { logEv('payment', 'Added ' + pqNo(pq + n) + ' · ' + it.title, ids[n]); });
@@ -2299,7 +2320,7 @@ function Users() {
     if (nu.pass && nu.pass.length < 8) { setNu(Object.assign({}, nu, { err: 'A starting password needs at least 8 characters, or leave it empty to send an invitation.' })); return; }
     var rl = roles.indexOf(nu.role) >= 0 ? nu.role : roles[0];
     try {
-      var cr = await window.daa.post('/api/users/create', { first: nu.first, last: nu.last, position: nu.position, email: em, role: rl, managerId: nu.managerId || '', pass: nu.pass });
+      var cr = await window.daa.post('/api/users/create', { first: nu.first, last: nu.last, position: nu.position, email: em, role: rl, managerIds: nu.managerIds || [], pass: nu.pass });
       linkResult(cr, em, nu.pass ? 'welcome' : 'invite'); setNu({ first: '', last: '', position: '', email: '', role: rl, pass: '', err: '' });
     } catch (ex) { setNu(Object.assign({}, nu, { err: ex.message })); }
   }
@@ -2325,7 +2346,7 @@ function Users() {
             <div style="min-width: 0"><b>${nameOf(u)}</b>${u.active === false ? html` <span class="badge s5">Deactivated</span>` : ''}${u.pending ? html` <span class="badge s1">Invitation pending</span>` : ''}<div class="muted" style="font-size: 12px; overflow-wrap: anywhere">${u.position} · ${u.email}${has2fa(u) ? ' · 2-step on' : needs2fa(u) ? ' · 2-step pending' : ''}</div></div>
             <div class="tm-role">${ed ? html`<select class="inp sm" aria-label=${'Role for ' + nameOf(u)} value=${u.role} onChange=${function (e) { var v = e.target.value; patch('users', u.id, { role: v }).then(function (r) { if (r) logEv('users', 'Role of ' + nameOf(u) + ' changed to ' + ROLE[v]); }); }}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select>` : html`<span class="badge s0">${ROLE[u.role]}</span>`}</div>
             <div class="tm-acts">
-              ${u.role === 'aa' && html`<label class="tm-mgr">Manager ${top ? html`<select class="inp sm" style="width: auto; min-width: 180px" aria-label=${'Account manager for ' + nameOf(u)} value=${u.managerId && byId(ams, u.managerId) ? u.managerId : ''} onChange=${function (e) { patch('users', u.id, { managerId: e.target.value }); }}><option value="">Not assigned</option>${ams.map(function (m) { return html`<option value=${m.id}>${nameOf(m)}</option>`; })}</select>` : html`<b style="color: var(--ink)">${u.managerId ? userName(u.managerId) : 'Not assigned'}</b>`}</label>`}
+              ${u.role === 'aa' && html`<span class="tm-mgr">Managers ${top ? html`<${MgrPicker} small value=${mgrsOf(u)} label=${'Account managers for ' + nameOf(u)} onChange=${function (v) { patch('users', u.id, { managerIds: v }).then(function (r) { if (r) logEv('users', 'Account managers of ' + nameOf(u) + ': ' + mgrLabel(v)); }); }} />` : html`<b style="color: var(--ink)">${mgrLabel(mgrsOf(u))}</b>`}</span>`}
               ${canLink && html`<button class="btn q sm" onClick=${function () { sendLink(u); }}>${u.pending ? 'Send invitation again' : 'Send password reset'}</button>`}
               ${top && u.id !== me.id && has2fa(u) && html`<button class="btn q sm" onClick=${function () { patch('users', u.id, { totp: { on: false, secret: '' } }).then(function (r) { if (r) { logEv('security', 'Reset two-step sign-in for ' + nameOf(u)); toast('Two-step sign-in reset for ' + nameOf(u) + '. They set it up again at next sign-in.'); } }); }}>Reset 2-step</button>`}
               ${ed && html`<button class="btn q sm" onClick=${function () { var on = u.active === false; patch('users', u.id, { active: on }).then(function (r) { if (r) logEv('users', (on ? 'Reactivated ' : 'Deactivated ') + nameOf(u)); }); }}>${u.active === false ? 'Reactivate' : 'Deactivate'}</button>`}
@@ -2340,7 +2361,7 @@ function Users() {
             <${Field} label="Position"><input id="nu-pos" class="inp" value=${nu.position} onInput=${inputOn(nu, setNu, 'position')} /><//>
             <${Field} label="Email"><input id="nu-email" class="inp" type="email" placeholder="name@daa.co.me" value=${nu.email} onInput=${inputOn(nu, setNu, 'email')} /><//>
             <${Field} label="Role"><select id="nu-role" class="inp" value=${nu.role} onChange=${inputOn(nu, setNu, 'role')}>${roles.map(function (x) { return html`<option value=${x}>${ROLE[x]}</option>`; })}</select><//>
-            ${top && nu.role === 'aa' && html`<${Field} label="Account manager"><select id="nu-mgr" class="inp" value=${nu.managerId || ''} onChange=${inputOn(nu, setNu, 'managerId')}><option value="">Not assigned</option>${ams.map(function (m) { return html`<option value=${m.id}>${nameOf(m)}</option>`; })}</select><//>`}
+            ${top && nu.role === 'aa' && html`<div class="fld"><span>Account managers</span><${MgrPicker} wide value=${nu.managerIds || []} label="Account managers for the new assistant" onChange=${function (v) { setNu(Object.assign({}, nu, { managerIds: v })); }} /></div>`}
             <${Field} label="Starting password (optional)" hint="Leave empty to email an invitation link; they choose their own password."><input id="nu-pass" class="inp" type="text" autocomplete="off" value=${nu.pass} onInput=${inputOn(nu, setNu, 'pass')} /><//>
           </div>
           ${nu.err && html`<div class="alert e" role="alert">${nu.err}</div>`}
@@ -2351,7 +2372,7 @@ function Users() {
         <div class="pad" style="border-bottom: 1px solid var(--line)"><h2 style="font-size: 17px">What each role can do</h2></div>
         <div class="scroll"><table class="t" style="min-width: 640px"><thead><tr><th style="padding: 10px 20px">Action</th>${['Super-admin', 'CEO', 'Account manager', 'Account assistant', 'Office manager'].map(function (r) { return html`<th style="text-align: center">${r}</th>`; })}</tr></thead>
           <tbody>${matrix.map(function (m) { return html`<tr><th scope="row" style="background: none; padding: 11px 20px; font-weight: 500; white-space: normal">${m[0]}</th>${m[1].map(function (v) { return html`<td style=${'text-align: center;' + (v ? ' font-weight: 700' : ' color: var(--muted)')}>${v === 1 ? 'Yes' : (v || '—')}</td>`; })}</tr>`; })}</tbody></table></div>
-        <p class="muted" style="margin: 0; padding: 14px 20px; font-size: 12px; border-top: 1px solid var(--line-2)">Account managers see their own requests and their assistants’; assistants see only their own. Assistants with no manager assigned are visible to every account manager. The office manager, CEO and Super-admin see all requests.</p>
+        <p class="muted" style="margin: 0; padding: 14px 20px; font-size: 12px; border-top: 1px solid var(--line-2)">Account managers see their own requests and their assistants’; assistants see only their own. Assistants choose one, several or all account managers (in their Profile settings, or here); all is the default. The office manager, CEO and Super-admin see all requests.</p>
       </section>
     </div>
     ${linkBox && html`<div class="alert i stack" role="status" style="gap: 8px"><span><b>${linkBox.why}.</b> Send this ${linkBox.kind === 'reset' ? 'password reset' : 'invitation'} link to ${linkBox.email} yourself (it works for ${linkBox.kind === 'reset' ? '24 hours' : '7 days'}):</span><span class="mono" style="word-break: break-all; user-select: all; font-size: 13px">${linkBox.link}</span><div class="row"><button class="btn sm" onClick=${function () { try { navigator.clipboard.writeText(linkBox.link).then(function () { toast('Link copied.'); }); } catch (e) {} }}>Copy link</button><button class="btn q sm" onClick=${function () { setLinkBox(null); }}>Done</button></div></div>`}
@@ -2468,6 +2489,7 @@ function Profile() {
     <form class="mbody" onSubmit=${save}>
       <div class="grid"><${Field} label="First name"><input id="pf-first" class="inp" value=${f.first} onInput=${inputOn(f, set, 'first')} /><//><${Field} label="Last name"><input id="pf-last" class="inp" value=${f.last} onInput=${inputOn(f, set, 'last')} /><//></div>
       <${Field} label="Position"><input id="pf-pos" class="inp" value=${f.position} onInput=${inputOn(f, set, 'position')} /><//>
+      ${me.role === 'aa' && html`<div class="fld"><span>My account managers</span><${MgrPicker} wide value=${mgrsOf(me)} label="My account managers" onChange=${function (v) { G.me = Object.assign({}, G.me, { managerIds: v, managerId: '' }); redraw(); patch('users', me.id, { managerIds: v }).then(function (r) { if (r) { toast('Account managers saved: ' + mgrLabel(v) + '.'); logEv('users', nameOf(me) + ' chose account managers: ' + mgrLabel(v)); } }); }} /><span class="hint">They see your requests, approve them and are notified. Choose one, several or all.</span></div>`}
       <fieldset class="card grid" style="margin: 0; padding: 14px 16px"><legend style="padding: 0 6px; font-weight: 600">Change password</legend>
         <${Field} label="Current password"><input id="pf-cur" class="inp" type="password" autocomplete="current-password" value=${f.cur} onInput=${inputOn(f, set, 'cur')} /><//>
         <${Field} label="New password"><input id="pf-p1" class="inp" type="password" autocomplete="new-password" value=${f.p1} onInput=${inputOn(f, set, 'p1')} /><//>
