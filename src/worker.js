@@ -3,7 +3,7 @@ import { vapidKeys, sendPush } from './push.js';
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.6.3';
+const APP_VERSION = '0.6.4';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -921,39 +921,51 @@ async function dailyJobs(env) {
   const { results } = await env.DB.prepare("SELECT id, data FROM docs WHERE col = 'notifs' AND deleted = 0").all();
   for (const r of results) { const d = JSON.parse(r.data); if ((d.ts || 0) < cutoff) await delDoc(env, 'notifs', r.id); }
 }
+// Monday report: the CEO and Super-admin get the whole company's report; everyone else gets one
+// with only the requests they added (none is sent when they have nothing open and nothing this week).
 async function weeklyReport(env) {
   if (!env.RESEND_API_KEY) return;
-  const users = await allDocs(env, 'users'), items = await allDocs(env, 'items'), clients = await allDocs(env, 'clients'), projects = await allDocs(env, 'projects');
-  const byId = (l, id) => l.find((x) => x.id === id);
+  const users = await allDocs(env, 'users'), all = await allDocs(env, 'items'), clients = await allDocs(env, 'clients'), projects = await allDocs(env, 'projects');
   const t = now(), week = t - 7 * 864e5, today = podgoricaStamp(t).date;
   const st = (x) => x.status || 0;
-  const rowsByStatus = STATUS.map((s, i) => { const l = items.filter((x) => st(x) === i); return [s, l.length, l.reduce((a, x) => a + (x.amount || 0), 0)]; });
-  const open = items.filter((x) => st(x) <= 3), toPay = open.reduce((a, x) => a + (x.amount || 0), 0);
-  const moved = (i) => items.filter((x) => (i === 0 ? x.ts : x['s' + i + 'Ts']) >= week);
-  const parseDue = (d) => { const m = String(d || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/); return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : null; };
-  const attention = [
-    ['To review for more than 7 days', items.filter((x) => st(x) === 0 && (x.ts || t) < week)],
-    ['Sent to payment, not paid yet', items.filter((x) => st(x) === 3)],
-    ['Past due date, not paid', items.filter((x) => st(x) <= 3 && parseDue(x.due) && parseDue(x.due) < t)],
-    ['Invoices that need details', items.filter((x) => x.kind === 'invoice' && x.amount == null && st(x) !== 5)],
-    ['Payment emails that failed', items.filter((x) => x.mail && x.mail.ok === false)]
-  ];
-  const byClient = {};
-  for (const x of open) { const k = (byId(clients, x.clientId) || {}).name || 'No client'; const p = (byId(projects, x.projectId) || {}).name || '—'; const key = k + ' · ' + p; byClient[key] = (byClient[key] || 0) + (x.amount || 0); }
-  const line = (x) => pq(x.pqn) + ' · ' + x.title + ' · ' + fmt(x.amount) + ' EUR';
-  const table = (head, rows) => '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #111;margin:0 0 16px">' + '<tr style="background:#111;color:#fff">' + head.map((h) => '<th align="left">' + esc(h) + '</th>').join('') + '</tr>' + rows.map((r) => '<tr>' + r.map((c) => '<td style="border-top:1px solid #ddd">' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
-  const thisWeek = [['Added', moved(0)], ['Approved', moved(1)], ['Approved for payment', moved(2)], ['Sent to payment', moved(3)], ['Paid', moved(4)], ['Denied', moved(5)]];
-  const html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;font-size:14px;line-height:1.45">' +
-    '<h2 style="margin:0 0 4px">DAA Pay · weekly report</h2><p style="margin:0 0 16px;color:#555">' + today + '</p>' +
-    '<p><b>Still to pay: ' + fmt(toPay) + ' EUR</b> across ' + open.length + ' items.</p>' +
-    table(['Status', 'Items', 'EUR'], rowsByStatus.map((r) => [r[0], String(r[1]), fmt(r[2])])) +
-    '<h3>This week</h3>' + table(['What', 'Items'], thisWeek.map((r) => [r[0], r[1].length ? r[1].map(line).join('; ') : '—'])) +
-    '<h3>Needs attention</h3>' + table(['What', 'Items'], attention.map((r) => [r[0], r[1].length ? r[1].map(line).join('; ') : '—'])) +
-    '<h3>Not yet paid, by client and project</h3>' + table(['Client · project', 'EUR'], Object.entries(byClient).map(([k, v]) => [k, fmt(v)])) +
-    '<p><a href="' + appUrl(env) + '">Open DAA Pay</a></p></div>';
-  const text = 'DAA Pay · weekly report · ' + today + '\n\nStill to pay: ' + fmt(toPay) + ' EUR across ' + open.length + ' items.\n\n' +
-    rowsByStatus.map((r) => r[0] + ': ' + r[1] + ' (' + fmt(r[2]) + ' EUR)').join('\n') + '\n\nNeeds attention:\n' +
-    attention.map((r) => '- ' + r[0] + ': ' + (r[1].length ? r[1].map(line).join('; ') : 'none')).join('\n') + '\n\n' + appUrl(env) + '\n';
-  const to = users.filter((u) => u.active !== false && u.email && wants(u, 'weekly')).map((u) => u.email);
-  if (to.length) await sendMail(env, { to, subject: 'DAA Pay · weekly report · ' + today, text, html });
+  const report = (items, who) => {
+    const byId = (l, id) => l.find((x) => x.id === id);
+    const rowsByStatus = STATUS.map((s, i) => { const l = items.filter((x) => st(x) === i); return [s, l.length, l.reduce((a, x) => a + (x.amount || 0), 0)]; });
+    const open = items.filter((x) => st(x) <= 3), toPay = open.reduce((a, x) => a + (x.amount || 0), 0);
+    const moved = (i) => items.filter((x) => (i === 0 ? x.ts : x['s' + i + 'Ts']) >= week);
+    const parseDue = (d) => { const m = String(d || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/); return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : null; };
+    const attention = [
+      ['To review for more than 7 days', items.filter((x) => st(x) === 0 && (x.ts || t) < week)],
+      ['Sent to payment, not paid yet', items.filter((x) => st(x) === 3)],
+      ['Past due date, not paid', items.filter((x) => st(x) <= 3 && parseDue(x.due) && parseDue(x.due) < t)],
+      ['Invoices that need details', items.filter((x) => x.kind === 'invoice' && x.amount == null && st(x) !== 5)]
+    ].concat(who ? [['Denied, to correct and send back', items.filter((x) => st(x) === 5)]] : [['Payment emails that failed', items.filter((x) => x.mail && x.mail.ok === false)]]);
+    const byClient = {};
+    for (const x of open) { const k = (byId(clients, x.clientId) || {}).name || 'No client'; const p = (byId(projects, x.projectId) || {}).name || '—'; const key = k + ' · ' + p; byClient[key] = (byClient[key] || 0) + (x.amount || 0); }
+    const line = (x) => pq(x.pqn) + ' · ' + x.title + ' · ' + fmt(x.amount) + ' EUR';
+    const table = (head, rows) => '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #111;margin:0 0 16px">' + '<tr style="background:#111;color:#fff">' + head.map((h) => '<th align="left">' + esc(h) + '</th>').join('') + '</tr>' + rows.map((r) => '<tr>' + r.map((c) => '<td style="border-top:1px solid #ddd">' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
+    const thisWeek = [['Added', moved(0)], ['Approved', moved(1)], ['Approved for payment', moved(2)], ['Sent to payment', moved(3)], ['Paid', moved(4)], ['Denied', moved(5)]];
+    const title = who ? 'Your weekly report' : 'DAA Pay · weekly report';
+    const intro = who ? 'Hello ' + (who.first || nameOf(who)) + ', this is the week for the payment requests you added.' : '';
+    const html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;font-size:14px;line-height:1.45">' +
+      '<h2 style="margin:0 0 4px">' + esc(title) + '</h2><p style="margin:0 0 16px;color:#555">' + today + '</p>' + (intro ? '<p>' + esc(intro) + '</p>' : '') +
+      '<p><b>Still to pay: ' + fmt(toPay) + ' EUR</b> across ' + open.length + ' items.</p>' +
+      table(['Status', 'Items', 'EUR'], rowsByStatus.map((r) => [r[0], String(r[1]), fmt(r[2])])) +
+      '<h3>This week</h3>' + table(['What', 'Items'], thisWeek.map((r) => [r[0], r[1].length ? r[1].map(line).join('; ') : '—'])) +
+      '<h3>Needs attention</h3>' + table(['What', 'Items'], attention.map((r) => [r[0], r[1].length ? r[1].map(line).join('; ') : '—'])) +
+      (Object.keys(byClient).length ? '<h3>Not yet paid, by client and project</h3>' + table(['Client · project', 'EUR'], Object.entries(byClient).map(([k, v]) => [k, fmt(v)])) : '') +
+      '<p><a href="' + appUrl(env) + '">Open DAA Pay</a></p></div>';
+    const text = title + ' · ' + today + '\n\n' + (intro ? intro + '\n\n' : '') + 'Still to pay: ' + fmt(toPay) + ' EUR across ' + open.length + ' items.\n\n' +
+      rowsByStatus.map((r) => r[0] + ': ' + r[1] + ' (' + fmt(r[2]) + ' EUR)').join('\n') + '\n\nNeeds attention:\n' +
+      attention.map((r) => '- ' + r[0] + ': ' + (r[1].length ? r[1].map(line).join('; ') : 'none')).join('\n') + '\n\n' + appUrl(env) + '\n';
+    return { html, text, active: open.length + thisWeek.reduce((n, r) => n + r[1].length, 0) + items.filter((x) => st(x) === 5).length };
+  };
+  const live = users.filter((u) => u.active !== false && u.email && wants(u, 'weekly'));
+  const tops = live.filter((u) => isTop(u.role));
+  if (tops.length) { const r = report(all, null); await sendMail(env, { to: tops.map((u) => u.email), subject: 'DAA Pay · weekly report · ' + today, text: r.text, html: r.html }).catch(() => {}); }
+  for (const u of live.filter((v) => !isTop(v.role))) {
+    const r = report(all.filter((x) => x.by === u.id), u);
+    if (!r.active) continue;
+    await sendMail(env, { to: [u.email], subject: 'DAA Pay · your weekly report · ' + today, text: r.text, html: r.html }).catch(() => {});
+  }
 }

@@ -343,7 +343,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.6.3';
+var APP_VERSION = '0.6.4';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -1053,7 +1053,7 @@ var HELP = [
   { id: 'emails', title: 'Emails and notifications', text: [
     'Push notifications: Profile settings → Notifications → Push on this device → Turn on. On iPhone, install DAA Pay on the Home Screen first and open it from the icon (iOS 16.4 or later). Tapping a notification opens the request.',
     'Choose what reaches you: Profile settings → Notifications. Turn each type on or off in the app (the bell), as push and by email. Sign-in and account emails, and Critical announcements, always come.',
-    'The bell shows what needs you. DAA Pay also emails: reviewers when new requests arrive, the office manager when something is sent to payment, the initiator when it is denied or paid, and everyone a summary every Monday.',
+    'The bell shows what needs you. DAA Pay also emails: reviewers when new requests arrive, the office manager when something is sent to payment, the initiator when it is denied or paid, and a summary every Monday: the CEO and Super-admin get the whole company, everyone else only the requests they added.',
     'New people get a welcome or invitation email; people who ask for access get a confirmation and an email when they are approved.'] },
   { id: 'account', title: 'Your account and security', text: [
     'Profile settings: your name, position, password and two-step sign-in.',
