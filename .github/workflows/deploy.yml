@@ -96,7 +96,8 @@ jobs:
           if [ -n "$match" ]; then echo "::notice title=Fiscal certificate OK::$subj, valid until $until. IKOF of invoice 205/2026 recalculated exactly from: $match"
           else echo "::warning title=Fiscal certificate::Opened ($subj, valid until $until), but none of $n variants of invoice 205/2026 gave its IKOF. The old software may sign with a different certificate. Fiscalization stays off."; fi
           sp() { out=$(npx wrangler secret put "$1" < "$2" 2>&1) || echo "::error title=Storing $1::$(echo "$out" | grep -v '^\s*$' | tail -4 | tr '\n' ' ' | cut -c1-600)"; }
-          sp FISCAL_KEY_PEM "$d/k8.pem"; sp FISCAL_CERT_PEM "$d/c.pem"; echo "done"
+          openssl x509 -in "$d/c.pem" -out "$d/c1.pem"   # the certificate alone, without bag attributes or the chain
+          sp FISCAL_KEY_PEM "$d/k8.pem"; sp FISCAL_CERT_PEM "$d/c1.pem"; echo "done"
 
       - name: Store email key (if provided)
         env:
