@@ -86,14 +86,17 @@ jobs:
           p12 -nocerts -nodes -out "$d/k.pem" && p12 -clcerts -nokeys -out "$d/c.pem" || { echo "::error title=Fiscal certificate::Could not open the .p12 file. Check FISCAL_CERT_PASSWORD and that FISCAL_CERT_P12 is the whole file in base64."; exit 0; }
           openssl pkcs8 -topk8 -nocrypt -in "$d/k.pem" -out "$d/k8.pem" 2>/dev/null || cp "$d/k.pem" "$d/k8.pem"
           subj=$(openssl x509 -in "$d/c.pem" -noout -subject | sed 's/^subject=//'); until=$(openssl x509 -in "$d/c.pem" -noout -enddate | cut -d= -f2)
-          match=""
-          for s in "02764318|2026-11-08T21:16:17+01:00|205|ta408js210|qs766qf990|qk433mq872|506.04" "02764318|2026-11-08T21:16:17+01:00|205|ta408js210|qs766qf990|qk433mq872|506.040"; do
-            ikof=$(printf '%s' "$s" | openssl dgst -sha256 -sign "$d/k8.pem" | openssl dgst -md5 -r | cut -d' ' -f1)
-            [ "$ikof" = "b75ea584a8d76231d2b91ef41cbf98dd" ] && match="$s"
-          done
-          if [ -n "$match" ]; then echo "::notice title=Fiscal certificate OK::$subj, valid until $until. IKOF of invoice 205/2026 recalculated exactly (format: ${match##*|})."
-          else echo "::warning title=Fiscal certificate::Opened ($subj, valid until $until), but the IKOF of invoice 205/2026 did not come out the same. Fiscalization stays off until this is solved."; fi
-          npx wrangler secret put FISCAL_KEY_PEM < "$d/k8.pem" > /dev/null && npx wrangler secret put FISCAL_CERT_PEM < "$d/c.pem" > /dev/null && echo "Certificate stored for the Worker."
+          match=""; n=0
+          ikof_of() { printf '%s' "$1" | openssl dgst -sha256 -sign "$d/k8.pem" | openssl dgst -md5 -r | cut -d' ' -f1; }
+          # Exact data first, then nearby times / offsets / price formats (the printed time may differ from the signed one).
+          for tz in "+01:00" "+02:00" "Z" "+00:00"; do for h in 21 20 22 19 23; do for m in 16 15 17; do for sec in $(seq -w 0 59); do for pr in "506.04" "506.040"; do
+            s="02764318|2026-11-08T$h:$m:$sec$tz|205|ta408js210|qs766qf990|qk433mq872|$pr"; n=$((n+1))
+            if [ "$(ikof_of "$s")" = "b75ea584a8d76231d2b91ef41cbf98dd" ]; then match="$s"; break 5; fi
+          done; done; done; done; done
+          if [ -n "$match" ]; then echo "::notice title=Fiscal certificate OK::$subj, valid until $until. IKOF of invoice 205/2026 recalculated exactly from: $match"
+          else echo "::warning title=Fiscal certificate::Opened ($subj, valid until $until), but none of $n variants of invoice 205/2026 gave its IKOF. The old software may sign with a different certificate. Fiscalization stays off."; fi
+          sp() { out=$(npx wrangler secret put "$1" < "$2" 2>&1) || echo "::error title=Storing $1::$(echo "$out" | grep -v '^\s*$' | tail -4 | tr '\n' ' ' | cut -c1-600)"; }
+          sp FISCAL_KEY_PEM "$d/k8.pem"; sp FISCAL_CERT_PEM "$d/c.pem"; echo "done"
 
       - name: Store email key (if provided)
         env:
