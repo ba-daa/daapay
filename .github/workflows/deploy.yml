@@ -70,6 +70,31 @@ jobs:
           url=$(echo "$out" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1)
           echo "::notice title=DAA Pay is live::${url:-see the deploy log for the address}"
 
+      - name: Fiscal certificate (if provided)
+        env:
+          FISCAL_CERT_P12: ${{ secrets.FISCAL_CERT_P12 }}
+          FISCAL_CERT_PASSWORD: ${{ secrets.FISCAL_CERT_PASSWORD }}
+        run: |
+          # Never prints the key or password. Converts the .p12 for the Worker and checks it against a
+          # known fiscalized invoice: the IKOF of DAA's invoice 205/2026 must come out the same.
+          if [ -z "$FISCAL_CERT_P12" ] || [ -z "$FISCAL_CERT_PASSWORD" ]; then
+            echo "::warning title=Fiscal certificate::Not found. Add FISCAL_CERT_P12 (the .p12 file as base64) and FISCAL_CERT_PASSWORD as repository secrets."; exit 0; fi
+          echo "::add-mask::$FISCAL_CERT_PASSWORD"
+          d=$(mktemp -d); trap 'rm -rf "$d"' EXIT; chmod 700 "$d"
+          printf '%s' "$FISCAL_CERT_P12" | tr -d ' \r\n' | base64 -d > "$d/c.p12" 2>/dev/null || { echo "::error title=Fiscal certificate::FISCAL_CERT_P12 is not valid base64."; exit 0; }
+          p12() { openssl pkcs12 -in "$d/c.p12" -passin env:FISCAL_CERT_PASSWORD "$@" 2>/dev/null || openssl pkcs12 -legacy -in "$d/c.p12" -passin env:FISCAL_CERT_PASSWORD "$@" 2>/dev/null; }
+          p12 -nocerts -nodes -out "$d/k.pem" && p12 -clcerts -nokeys -out "$d/c.pem" || { echo "::error title=Fiscal certificate::Could not open the .p12 file. Check FISCAL_CERT_PASSWORD and that FISCAL_CERT_P12 is the whole file in base64."; exit 0; }
+          openssl pkcs8 -topk8 -nocrypt -in "$d/k.pem" -out "$d/k8.pem" 2>/dev/null || cp "$d/k.pem" "$d/k8.pem"
+          subj=$(openssl x509 -in "$d/c.pem" -noout -subject | sed 's/^subject=//'); until=$(openssl x509 -in "$d/c.pem" -noout -enddate | cut -d= -f2)
+          match=""
+          for s in "02764318|2026-11-08T21:16:17+01:00|205|ta408js210|qs766qf990|qk433mq872|506.04" "02764318|2026-11-08T21:16:17+01:00|205|ta408js210|qs766qf990|qk433mq872|506.040"; do
+            ikof=$(printf '%s' "$s" | openssl dgst -sha256 -sign "$d/k8.pem" | openssl dgst -md5 -r | cut -d' ' -f1)
+            [ "$ikof" = "b75ea584a8d76231d2b91ef41cbf98dd" ] && match="$s"
+          done
+          if [ -n "$match" ]; then echo "::notice title=Fiscal certificate OK::$subj, valid until $until. IKOF of invoice 205/2026 recalculated exactly (format: ${match##*|})."
+          else echo "::warning title=Fiscal certificate::Opened ($subj, valid until $until), but the IKOF of invoice 205/2026 did not come out the same. Fiscalization stays off until this is solved."; fi
+          npx wrangler secret put FISCAL_KEY_PEM < "$d/k8.pem" > /dev/null && npx wrangler secret put FISCAL_CERT_PEM < "$d/c.pem" > /dev/null && echo "Certificate stored for the Worker."
+
       - name: Store email key (if provided)
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
