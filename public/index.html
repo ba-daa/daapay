@@ -348,7 +348,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.6.7';
+var APP_VERSION = '0.7.0';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -1290,7 +1290,7 @@ function Header() {
     <div class="brand"><${Logo} w=${34} /><div><b>DAA Pay <span class="alpha">Beta</span></b><small>DAA Montenegro d.o.o. · PIB 02764318</small></div></div>
     <nav class="tabs" aria-label="Sections">
       <button class=${'tab' + (G.ui.tab === 'queue' ? ' on' : '')} aria-current=${G.ui.tab === 'queue' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'queue' }); }}>Queue</button>
-      <button class=${'tab' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null }); }}>Beneficiaries</button>
+      <button class=${'tab' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null }); }}>Partners</button>
       <button class=${'tab' + (G.ui.tab === 'ce' ? ' on' : '')} aria-current=${G.ui.tab === 'ce' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'ce', open: null, ce: null }); }}>Cost estimates</button>
       ${usersAllowed && html`<button class=${'tab' + (G.ui.tab === 'users' ? ' on' : '')} aria-current=${G.ui.tab === 'users' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'users', open: null }); }}>Users & roles${regsN ? html`<span class="pill">${regsN}</span>` : ''}</button>`}
     </nav>
@@ -1321,7 +1321,7 @@ function Header() {
       <button class="btn" style="width: 100%; min-height: 48px" onClick=${function () { setUi({ nav: false, modal: 'choose' }); }}>${I.plus} Add to payment queue</button>
       <div class="stack" style="gap: 4px">
         <button class=${'navitem' + (G.ui.tab === 'queue' ? ' on' : '')} aria-current=${G.ui.tab === 'queue' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'queue', nav: false }); }}>Queue</button>
-        <button class=${'navitem' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null, nav: false }); }}>Beneficiaries</button>
+        <button class=${'navitem' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null, nav: false }); }}>Partners</button>
         <button class=${'navitem' + (G.ui.tab === 'ce' ? ' on' : '')} aria-current=${G.ui.tab === 'ce' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'ce', open: null, ce: null, nav: false }); }}>Cost estimates</button>
         ${usersAllowed && html`<button class=${'navitem' + (G.ui.tab === 'users' ? ' on' : '')} aria-current=${G.ui.tab === 'users' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'users', open: null, nav: false }); }}>Users & roles${regsN ? html`<span class="pill" style="margin-left: auto">${regsN}</span>` : ''}</button>`}
       </div>
@@ -2411,6 +2411,22 @@ function Users() {
 }
 
 // ================= BENEFICIARIES =================
+// Partners: one list for suppliers/beneficiaries (bens) and clients. A client is a partner with a linked
+// client record (ben.clientId ↔ client.benId) that projects, estimates and outgoing invoices use.
+var partnerSync = false;
+async function syncPartners() {
+  if (partnerSync) return; partnerSync = true;
+  try {
+    for (var i = 0; i < G.data.clients.length; i++) {
+      var c = G.data.clients[i];
+      if (c.benId && byId(G.data.bens, c.benId)) continue;
+      var nm = (c.name || '').trim().toLowerCase(), b = G.data.bens.filter(function (x) { return !x.clientId && (x.name || '').trim().toLowerCase() === nm; })[0];
+      if (b) { await patch('bens', b.id, { clientId: c.id }); await patch('clients', c.id, { benId: b.id }); }
+      else { var bid = uid('b'); if (await put('bens', bid, { name: c.name || '', pib: '', address: '', email: '', account: '', payType: 'domestic', clientId: c.id, createdAt: stamp(), createdBy: G.me.id })) await patch('clients', c.id, { benId: bid }); }
+    }
+  } finally { partnerSync = false; }
+}
+function partnerOfClient(clientId) { var c = byId(G.data.clients, clientId); return c && c.benId ? byId(G.data.bens, c.benId) : null; }
 function benUses(b) {
   var nm = (b.name || '').toLowerCase();
   return G.data.items.filter(function (x) { return (b.pib && x.pib === b.pib) || (b.pib && fieldVal(x, 'JMBG / PIB') === b.pib) || ((x.title || '').toLowerCase() === nm); }).length;
@@ -2419,50 +2435,79 @@ function Beneficiaries() {
   var narrow = useNarrow();
   var me = G.me, top = isTop(me.role), canEdit = top || me.role === 'am' || me.role === 'om';
   var qs = useState(''), q = qs[0], setQ = qs[1];
-  var es = useState(null), ed = es[0], setEd = es[1];        // { id|null, name, pib, account, address, err }
-  var ds = useState(null), delId = ds[0], setDel = ds[1];
+  var es = useState(null), ed = es[0], setEd = es[1];
+  var ds = useState(null), delId = ds[0], setDel = ds[1], rs = useState('all'), role = rs[0], setRole = rs[1];
+  useEffect(function () { if (canEdit && G.data.clients.some(function (c) { return !c.benId || !byId(G.data.bens, c.benId); })) syncPartners(); }, [G.data.clients.length]);
+  var clientOf = function (b) { return b.clientId ? byId(G.data.clients, b.clientId) : null; };
   var list = G.data.bens.filter(function (b) {
-    var t = q.trim().toLowerCase();
-    return !t || [b.name, b.pib, b.account, b.iban, b.address, b.email].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; });
+    if (role === 'client' && !clientOf(b)) return false;
+    if (role === 'supplier' && clientOf(b) && !benUses(b)) return false;
+    var t = q.trim().toLowerCase(), cl = clientOf(b);
+    return !t || [b.name, b.pib, b.pdv, b.account, b.iban, b.address, b.town, b.email, b.contact, cl ? 'client ' + cl.code : ''].some(function (v) { return String(v || '').toLowerCase().indexOf(t) >= 0; });
   }).sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
-  function open(b) { setDel(null); setEd(b ? { id: b.id, name: b.name || '', pib: b.pib || '', account: b.account || '', address: b.address || '', email: b.email || '', err: '' } : { id: null, name: '', pib: '', account: '', address: '', email: '', err: '' }); }
+  var nClients = G.data.bens.filter(function (b) { return clientOf(b); }).length;
+  function open(b) { setDel(null); var cl = b && clientOf(b); setEd(b ? { id: b.id, name: b.name || '', pib: b.pib || '', pdv: b.pdv || '', account: b.account || '', address: b.address || '', town: b.town || '', country: b.country || 'Crna Gora', email: b.email || '', contact: b.contact || '', isClient: !!cl, code: cl ? cl.code || '' : '', fee: cl && cl.fee != null ? String(cl.fee) : '', err: '' } : { id: null, name: '', pib: '', pdv: '', account: '', address: '', town: '', country: 'Crna Gora', email: '', contact: '', isClient: role === 'client', code: '', fee: '', err: '' }); }
   async function save(e) {
     e.preventDefault();
     var name = ed.name.trim(), pib = ed.pib.trim(), acc = ed.account.trim(), adr = ed.address.trim(), fail = function (m) { setEd(Object.assign({}, ed, { err: m })); };
     if (!name) return fail('Add the name.');
     if (pib && !/^(\d{8}|\d{13})$/.test(pib)) return fail('PIB has 8 digits (JMBG has 13). Check the number.');
-    if (pib && G.data.bens.some(function (b) { return b.pib === pib && b.id !== ed.id; })) return fail('Another beneficiary already has PIB ' + pib + '.');
+    if (pib && G.data.bens.some(function (b) { return b.pib === pib && b.id !== ed.id; })) return fail('Another partner already has PIB ' + pib + '.');
     if (acc && !acctOk(acc)) return fail('Use the format 5XX-XXXXXXXXXXXXX-XX for the account number.');
     var em = (ed.email || '').trim(); if (em && !emailOk(em)) return fail('Check the email address.');
-    var data = { name: name, pib: pib, account: acc ? acctNorm(acc) : '', bank: acc ? bankName(acc) : '', address: adr, email: em, payType: 'domestic', updatedAt: stamp(), updatedBy: me.id };
-    var ok = ed.id ? await patch('bens', ed.id, data) : await put('bens', uid('b'), Object.assign({ iban: '', swift: '', jmbg: pib, createdAt: stamp(), createdBy: me.id }, data));
-    if (ok) { toast(ed.id ? 'Saved ' + name + '.' : 'Added ' + name + '.'); logEv('data', (ed.id ? 'Edited beneficiary ' : 'Added beneficiary ') + name + (pib ? ' (PIB ' + pib + ')' : '')); setEd(null); }
+    var data = { name: name, pib: pib, pdv: (ed.pdv || '').trim(), account: acc ? acctNorm(acc) : '', bank: acc ? bankName(acc) : '', address: adr, town: (ed.town || '').trim(), country: (ed.country || '').trim(), email: em, contact: (ed.contact || '').trim(), payType: 'domestic', updatedAt: stamp(), updatedBy: me.id };
+    var bid = ed.id || uid('b');
+    var ok = ed.id ? await patch('bens', bid, data) : await put('bens', bid, Object.assign({ iban: '', swift: '', jmbg: pib, createdAt: stamp(), createdBy: me.id }, data));
+    if (ok && ed.isClient) {
+      var cur = ed.id && byId(G.data.bens, ed.id), cid = cur && cur.clientId && byId(G.data.clients, cur.clientId) ? cur.clientId : null;
+      var cdata = { name: name, benId: bid, fee: ed.fee === '' ? null : Number(ed.fee) };
+      if (ed.code.trim()) cdata.code = ed.code.trim();
+      if (cid) ok = await patch('clients', cid, cdata);
+      else { cid = uid('c'); ok = await put('clients', cid, cdata) && await patch('bens', bid, { clientId: cid }); }
+    }
+    if (ok) { toast(ed.id ? 'Saved ' + name + '.' : 'Added ' + name + '.'); logEv('data', (ed.id ? 'Edited partner ' : 'Added partner ') + name + (pib ? ' (PIB ' + pib + ')' : '') + (ed.isClient ? ' · client' : '')); setEd(null); }
   }
-  var form = ed && html`<form class="card pad stack" onSubmit=${save} aria-label=${ed.id ? 'Edit beneficiary' : 'New beneficiary'}>
-    <b>${ed.id ? 'Edit beneficiary' : 'New beneficiary'}</b>
+  var wasClient = ed && ed.id && clientOf(byId(G.data.bens, ed.id) || {});
+  var form = ed && html`<form class="card pad stack" onSubmit=${save} aria-label=${ed.id ? 'Edit partner' : 'New partner'}>
+    <b>${ed.id ? 'Edit partner' : 'New partner'}</b>
     <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
       <${Field} label="Name" req><input id="bn-name" class="inp" value=${ed.name} onInput=${inputOn(ed, setEd, 'name')} /><//>
       <${Field} label="PIB"><input id="bn-pib" class="inp mono" inputmode="numeric" value=${ed.pib} onInput=${inputOn(ed, setEd, 'pib')} /><//>
       <${Field} label="Bank account" hint=${ed.account.trim() ? acctHint(ed.account, '') : 'Montenegrin account, 5XX-…-XX'}><input onBlur=${function (e) { if (acctOk(e.target.value)) setEd(Object.assign({}, ed, { account: acctNorm(e.target.value), err: '' })); }} id="bn-acct" class="inp mono" inputmode="numeric" placeholder="510-0000000000000-00" value=${ed.account} onInput=${inputOn(ed, setEd, 'account')} /><//>
+      <${Field} label="PDV number"><input id="bn-pdv" class="inp mono" placeholder="ME02764318" value=${ed.pdv} onInput=${inputOn(ed, setEd, 'pdv')} /><//>
       <${Field} label="Address" wide><input id="bn-adr" class="inp" value=${ed.address} onInput=${inputOn(ed, setEd, 'address')} /><//>
+      <${Field} label="Town"><input id="bn-town" class="inp" value=${ed.town} onInput=${inputOn(ed, setEd, 'town')} /><//>
+      <${Field} label="Country"><input id="bn-country" class="inp" value=${ed.country} onInput=${inputOn(ed, setEd, 'country')} /><//>
+      <${Field} label="Contact person"><input id="bn-contact" class="inp" value=${ed.contact} onInput=${inputOn(ed, setEd, 'contact')} /><//>
       <${Field} label="Email" wide hint="They get a short notice when a payment to them is sent and when it is paid."><input id="bn-email" class="inp" type="email" placeholder="name@company.me" value=${ed.email} onInput=${inputOn(ed, setEd, 'email')} /><//>
     </div>
+    <div class="card pad stack" style="background: var(--bg); gap: 10px">
+      <label class="row" style="gap: 8px; font-size: 14px"><input type="checkbox" checked=${ed.isClient} disabled=${wasClient} onChange=${function (e) { setEd(Object.assign({}, ed, { isClient: e.target.checked })); }} /> <b>Client</b> <span class="muted">· we invoice them, make estimates and run projects for them</span></label>
+      ${ed.isClient && html`<div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))">
+        <${Field} label="Client identifier" hint=${wasClient ? '' : 'Leave empty for the next free one'}><input id="bn-code" class="inp mono" inputmode="numeric" placeholder="01" value=${ed.code} onInput=${inputOn(ed, setEd, 'code')} /><//>
+        <${Field} label="Usual agency fee"><select id="bn-fee" class="inp" value=${ed.fee} onChange=${inputOn(ed, setEd, 'fee')}><option value="">Not set</option>${CE_FEES.map(function (f) { return html`<option value=${String(f)}>${f}%</option>`; })}</select><//>
+      </div>`}
+      ${wasClient && html`<div class="muted" style="font-size: 12px">A client with projects stays a client; delete it under Cost estimates → Projects.</div>`}
+    </div>
     ${ed.err && html`<div class="alert e" role="alert">${ed.err}</div>`}
-    <div class="row"><button class="btn" type="submit">${ed.id ? 'Save changes' : 'Add beneficiary'}</button><button class="btn q" type="button" onClick=${function () { setEd(null); }}>Cancel</button></div>
+    <div class="row"><button class="btn" type="submit">${ed.id ? 'Save changes' : 'Add partner'}</button><button class="btn q" type="button" onClick=${function () { setEd(null); }}>Cancel</button></div>
   </form>`;
   return html`<main class="page wrap gut">
-    <section class="card pad row" style="justify-content: space-between; gap: 12px" aria-label="Beneficiaries">
-      <div style="min-width: 0"><h2 style="font-size: 17px">Beneficiaries</h2><div class="muted" style="font-size: 13px">Suppliers and people we pay, shared by everyone: once someone adds a beneficiary, all users can choose it. Saved automatically from invoices and requests; ${canEdit ? 'you can correct them here.' : 'the CEO, account and office managers can edit them.'}</div></div>
-      <div class="row" style="flex: 1 1 320px; justify-content: flex-end">
-        <label style="flex: 1 1 220px; max-width: 360px"><span class="sr">Search beneficiaries</span><input id="bn-q" class="inp" type="search" placeholder="Search name, PIB, account, address" value=${q} onInput=${function (e) { setQ(e.target.value); }} /></label>
-        ${canEdit && html`<button class="btn" onClick=${function () { open(null); }}>${I.plus} Add beneficiary</button>`}
+    <section class="card pad stack" style="gap: 12px" aria-label="Partners">
+      <div class="row" style="justify-content: space-between; gap: 12px">
+        <div style="min-width: 0"><h2 style="font-size: 17px">Partners</h2><div class="muted" style="font-size: 13px">Suppliers, beneficiaries and clients in one shared list. Saved automatically from invoices and requests; mark a partner as a client to use it for projects, estimates and outgoing invoices.</div></div>
+        <div class="row" style="flex: 1 1 320px; justify-content: flex-end">
+          <label style="flex: 1 1 220px; max-width: 360px"><span class="sr">Search partners</span><input id="bn-q" class="inp" type="search" placeholder="Search name, PIB, account, town, email" value=${q} onInput=${function (e) { setQ(e.target.value); }} /></label>
+          ${canEdit && html`<button class="btn" onClick=${function () { open(null); }}>${I.plus} Add partner</button>`}
+        </div>
       </div>
+      <div class="row">${[['all', 'All', G.data.bens.length], ['client', 'Clients', nClients], ['supplier', 'Suppliers', G.data.bens.length - G.data.bens.filter(function (b) { return clientOf(b) && !benUses(b); }).length]].map(function (x) { return html`<button key=${x[0]} class=${'chip' + (role === x[0] ? ' on' : '')} aria-pressed=${role === x[0]} onClick=${function () { setRole(x[0]); }}>${x[1]} <span style="opacity: 0.7">${x[2]}</span></button>`; })}</div>
     </section>
     ${ed && (!ed.id || narrow) && form}
     ${narrow ? html`<section class="mlist" aria-label="Beneficiary list">${list.map(function (b) {
         var ok = !b.account || acctValid(b.account);
         return html`<article key=${b.id} class=${'mcard' + (ed && ed.id === b.id ? ' sel' : '')}>
-          <div class="mtop"><b style="font-size: 15px; word-break: break-word; flex: 1 1 auto; min-width: 0">${b.name}</b><span class="muted num" style="white-space: nowrap">${benUses(b)} in queue</span></div>
+          <div class="mtop"><b style="font-size: 15px; word-break: break-word; flex: 1 1 auto; min-width: 0">${b.name}${clientOf(b) ? html` <span class="badge s4 mono">Client ${clientOf(b).code || ''}</span>` : ''}</b><span class="muted num" style="white-space: nowrap">${benUses(b)} in queue</span></div>
           ${b.email && html`<div class="mmeta" style="overflow-wrap: anywhere">${b.email}</div>`}
           <div class="mmeta"><span class="muted">PIB </span><span class="mono">${b.pib || '—'}</span>${b.createdBy && html`<span class="muted"> · Added by ${userName(b.createdBy)}</span>`}</div>
           <div class="mmeta">${b.account ? html`<span class="mono">${b.account}</span> · ${b.bank || bankName(b.account)}${ok ? '' : ' · control digits differ from the usual check'}` : b.iban ? html`<span class="mono">${b.iban}</span> · IBAN` : html`<span class="muted">No bank account</span>`}</div>
@@ -2470,13 +2515,13 @@ function Beneficiaries() {
           ${(canEdit || top) && html`<div class="row" style="margin-top: 4px">${canEdit && html`<button class="btn q sm" onClick=${function () { open(b); window.scrollTo(0, 0); }}>Edit</button>`}${top && html`<button class="btn q sm" aria-label=${'Delete ' + b.name} onClick=${function () { setEd(null); setDel(b.id); }}>${I.trash}</button>`}</div>`}
           ${delId === b.id && html`<div class="alert e stack" role="alertdialog" aria-label="Confirm delete" style="gap: 8px"><span>Delete ${b.name} from the archive? Queue items stay as they are.</span><div class="row"><button class="btn d sm" onClick=${function () { del('bens', b.id).then(function (r) { if (r) { toast('Deleted ' + b.name + '.'); logEv('data', 'Deleted beneficiary ' + b.name); } setDel(null); }); }}>Delete</button><button class="btn q sm" style="background: var(--surface)" onClick=${function () { setDel(null); }}>Cancel</button></div></div>`}
         </article>`; })}
-      ${!list.length && html`<div class="card empty">${G.data.bens.length ? 'No beneficiary matches that search.' : 'No beneficiaries yet. They are saved when invoices and requests are added, or add one here.'}</div>`}</section>` : html`<section class="card" style="overflow: hidden">
+      ${!list.length && html`<div class="card empty">${G.data.bens.length ? 'No partner matches that search.' : 'No beneficiaries yet. They are saved when invoices and requests are added, or add one here.'}</div>`}</section>` : html`<section class="card" style="overflow: hidden">
       <div class="scroll"><table class="t" style="min-width: 860px">
         <thead><tr><th style="padding: 10px 16px">Name</th><th>PIB</th><th>Bank account</th><th>Address</th><th class="r">In queue</th><th><span class="sr">Actions</span></th></tr></thead>
         <tbody>${list.map(function (b) {
           var ok = !b.account || acctValid(b.account);
           return html`<tr key=${b.id} class=${ed && ed.id === b.id ? 'sel' : ''}>
-            <td style="padding-left: 16px"><b>${b.name}</b>${b.createdBy && html`<div class="muted" style="font-size: 12px">Added by ${userName(b.createdBy)}</div>`}</td>
+            <td style="padding-left: 16px"><b>${b.name}</b>${clientOf(b) ? html` <span class="badge s4 mono" title="Client identifier">Client ${clientOf(b).code || ''}</span>` : ''}${b.createdBy && html`<div class="muted" style="font-size: 12px">Added by ${userName(b.createdBy)}</div>`}</td>
             <td class="mono">${b.pib || '—'}</td>
             <td>${b.account ? html`<span class="mono">${b.account}</span><div class="muted" style="font-size: 12px">${b.bank || bankName(b.account)}${ok ? '' : ' · control digits differ from the usual check'}</div>` : (b.iban ? html`<span class="mono">${b.iban}</span><div class="muted" style="font-size: 12px">IBAN${b.swift ? ' · ' + b.swift : ''}</div>` : html`<span class="muted">—</span>`)}</td>
             <td style="max-width: 280px">${b.address || html`<span class="muted">—</span>`}${b.email ? html`<div class="muted" style="font-size: 12px; overflow-wrap: anywhere">${b.email}</div>` : ''}</td>
@@ -2490,7 +2535,7 @@ function Beneficiaries() {
           ${delId === b.id && html`<tr><td colspan="6" style="padding: 10px 16px"><div class="alert e row" role="alertdialog" aria-label="Confirm delete"><span style="flex-grow: 1">Delete ${b.name} from the archive? Queue items stay as they are.</span><button class="btn d sm" onClick=${function () { del('bens', b.id).then(function (r) { if (r) { toast('Deleted ' + b.name + '.'); logEv('data', 'Deleted beneficiary ' + b.name); } setDel(null); }); }}>Delete</button><button class="btn q sm" style="background: var(--surface)" onClick=${function () { setDel(null); }}>Cancel</button></div></td></tr>`}`;
         })}</tbody>
       </table></div>
-      ${!list.length && html`<div class="empty">${G.data.bens.length ? 'No beneficiary matches that search.' : 'No beneficiaries yet. They are saved when invoices and requests are added, or add one here.'}</div>`}
+      ${!list.length && html`<div class="empty">${G.data.bens.length ? 'No partner matches that search.' : 'No beneficiaries yet. They are saved when invoices and requests are added, or add one here.'}</div>`}
     </section>`}
   </main>`;
 }
