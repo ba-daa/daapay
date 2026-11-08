@@ -352,7 +352,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces', 'invoices', 'settings'];
-var APP_VERSION = '0.8.0';
+var APP_VERSION = '0.9.0';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -3519,14 +3519,16 @@ var COMPANY_DEFAULT = {
 function company() { var s = byId(G.data.settings || [], 'company') || {}; var c = Object.assign({}, COMPANY_DEFAULT, s); c.fiscal = Object.assign({}, COMPANY_DEFAULT.fiscal, s.fiscal || {}); c.operators = Object.assign({}, s.operators || {}); return c; }
 function operatorOf(uid0) { var c = company(), u = byId(G.data.users, uid0); return c.operators[uid0] || (u && /nikola\.radonjic@/.test(u.email || '') ? 'gv983hs641' : ''); }
 var INV_TYPES = { invoice: ['Račun', 'Invoice'], advance: ['Avansni račun', 'Advance invoice'] };
+var INV_TYPE_LABEL = { invoice: ['Račun', 'Invoice'], advance: ['Avansni račun', 'Advance invoice'], corrective: ['Korektivni račun', 'Corrective invoice'] };
+function invSign(inv) { return inv.type === 'corrective' ? -1 : 1; }
 var PAY_METHODS = { ACCOUNT: 'ACCOUNT – transakcioni račun, virman', FACTORING: 'FACTORING', OTHER: 'OTHER' };
 var PAY_STATUS = { unpaid: ['Nije plaćen', 'Not paid', 's5'], partial: ['Djelimično plaćen', 'Partly paid', 's2'], paid: ['Plaćen', 'Paid', 's4'], uncollectable: ['Nenaplativ', 'Uncollectable', 's0'] };
 var INV_L = {
   me: { inv: 'Račun', adv: 'Avansni račun', draft: 'NACRT – nije fiskalizovan', due: 'Rok za plaćanje', desc: 'Opis', qty: 'Kol.', unit: 'JM', net: 'Bez PDV', gross: 'Sa PDV', disc: 'Pop. %', tnet: 'Uk. bez PDV', tgross: 'Uk. sa PDV',
-    rate: 'PDV stopa', base: 'Osnovica za PDV', vat: 'Iznos poreza', sNet: 'Bez PDV-a:', sVat: 'PDV:', sTot: 'Total:', issued: 'Račun izdao', received: 'Račun preuzeo', note: 'Napomena', no: 'Broj', date: 'Datum', type: 'Vrsta', noncash: 'bezgotovinski',
+    rate: 'PDV stopa', base: 'Osnovica za PDV', vat: 'Iznos poreza', sNet: 'Bez PDV-a:', sVat: 'PDV:', sTot: 'Total:', issued: 'Račun izdao', received: 'Račun preuzeo', note: 'Napomena', no: 'Broj', date: 'Datum', type: 'Vrsta', noncash: 'bezgotovinski', payAcc: 'transakcioni račun',
     pib: 'PIB', pdv: 'PDV', adr: 'Adresa', country: 'Država', place: 'Podgorica', notVat: 'Izdavalac nije u sistemu PDV-a.' },
   en: { inv: 'Invoice', adv: 'Advance invoice', draft: 'DRAFT – not fiscalized', due: 'Payment due', desc: 'Description', qty: 'Qty', unit: 'Unit', net: 'Excl. VAT', gross: 'Incl. VAT', disc: 'Disc. %', tnet: 'Total excl. VAT', tgross: 'Total incl. VAT',
-    rate: 'VAT rate', base: 'VAT base', vat: 'VAT amount', sNet: 'Excl. VAT:', sVat: 'VAT:', sTot: 'Total:', issued: 'Issued by', received: 'Received by', note: 'Note', no: 'No.', date: 'Date', type: 'Type', noncash: 'non-cash',
+    rate: 'VAT rate', base: 'VAT base', vat: 'VAT amount', sNet: 'Excl. VAT:', sVat: 'VAT:', sTot: 'Total:', issued: 'Issued by', received: 'Received by', note: 'Note', no: 'No.', date: 'Date', type: 'Type', noncash: 'non-cash', payAcc: 'bank transfer',
     pib: 'Tax ID (PIB)', pdv: 'VAT ID', adr: 'Address', country: 'Country', place: 'Podgorica', notVat: 'The issuer is not registered for VAT.' }
 };
 function r5(n) { return Math.round((Number(n) || 0) * 1e5) / 1e5; }
@@ -3540,10 +3542,11 @@ function invLine(l, vatPayer) {
 }
 function invTotals(inv) {
   var by = {}, net = 0, vat = 0, gross = 0;
-  (inv.lines || []).forEach(function (l) { var t = invLine(l, inv.vatPayer !== false); net += t.net; vat += t.vat; gross += t.gross; var k = String(t.rate); by[k] = by[k] || { rate: t.rate, base: 0, vat: 0 }; by[k].base += t.net; by[k].vat += t.vat; });
+  var sg = invSign(inv);
+  (inv.lines || []).forEach(function (l) { var t = invLine(l, inv.vatPayer !== false); net += sg * t.net; vat += sg * t.vat; gross += sg * t.gross; var k = String(t.rate); by[k] = by[k] || { rate: t.rate, base: 0, vat: 0 }; by[k].base += sg * t.net; by[k].vat += sg * t.vat; });
   return { net: r2(net), vat: r2(vat), gross: r2(gross), rates: Object.keys(by).map(function (k) { return { rate: by[k].rate, base: r2(by[k].base), vat: r2(by[k].vat) }; }).sort(function (a, b) { return b.rate - a.rate; }) };
 }
-function invNo(inv) { return inv.status === 'draft' ? 'Nacrt' : inv.ordNum + '/' + inv.year; }
+function invNo(inv) { return inv.status === 'draft' || !inv.status ? 'Nacrt' : inv.ordNum + '/' + inv.year; }
 function invBuyer(inv) { return inv.buyer || {}; }
 function buyerFromClient(clientId) {
   var b = partnerOfClient(clientId) || {}, c = byId(G.data.clients, clientId) || {};
@@ -3591,8 +3594,12 @@ async function invMakePdf(inv) {
   [['PIB', c.pib], ['PDV', c.pdv], ['IBAN', c.iban], ['BIC/SWIFT', c.bic], ['', c.accounts]].forEach(function (r, i) { t(r[0], 380, H - M - 10 - i * 12, 8.5); rt(r[1], W - M, H - M - 10 - i * 12, 8.5); });
   // title block
   y = H - M - 140;
-  var title = (inv.type === 'advance' ? L.adv : L.inv) + ': ' + (inv.status === 'draft' ? '—' : invNo(inv));
+  var sg = invSign(inv), lang = inv.lang === 'en' ? 1 : 0;
+  var title = (INV_TYPE_LABEL[inv.type] || INV_TYPE_LABEL.invoice)[lang] + ': ' + (inv.status === 'draft' ? '—' : invNo(inv));
   t(title, M, y, 16, bold); if (inv.status === 'draft') t(L.draft, M, y - 16, 9, bold, red);
+  else if (inv.status === 'pending') t(lang ? 'Issued without JIKR (technical error); being re-sent.' : 'Izdat bez JIKR (tehnička greška); ponovo se dostavlja.', M, y - 16, 8.5, bold, red);
+  else if (inv.type === 'corrective') t((lang ? 'Corrects invoice ' : 'Koriguje račun ') + (inv.correctsNo || ''), M, y - 16, 9, bold);
+  else if (inv.cancelled) t((lang ? 'Cancelled by corrective invoice ' : 'Storniran korektivnim računom ') + (inv.correctedNo || ''), M, y - 16, 9, bold, red);
   t(L.place + ', ' + isoToDate(inv.issueDate) + '. / ' + L.due + ': ' + isoToDate(inv.dueDate) + '.', M, y - 32, 8.5);
   // buyer box
   page.drawRectangle({ x: 330, y: y - 120, width: W - M - 330, height: 135, borderColor: ink, borderWidth: 0.8 });
@@ -3604,7 +3611,7 @@ async function invMakePdf(inv) {
     var qr = window.qrcode(0, 'M'); qr.addData(f.qrUrl); qr.make(); var n = qr.getModuleCount(), cs = 70 / n;
     for (var r = 0; r < n; r++) for (var k = 0; k < n; k++) if (qr.isDark(r, k)) page.drawRectangle({ x: M + k * cs, y: fy - 70 + (n - 1 - r) * cs, width: cs, height: cs, color: ink });
   }
-  [['JIKR', f.jikr || '—'], ['IKOF', f.ikof || '—'], [L.no, inv.status === 'draft' ? '—' : c.fiscal.bu + '/' + inv.ordNum + '/' + inv.year + '/' + c.fiscal.enu], [L.date, f.at || '—'], [L.type, L.noncash + ' / ' + (inv.payMethod || 'ACCOUNT')]].forEach(function (r2_, i) { t(r2_[0], M + 82, fy - i * 13, 7.5, reg, grey); t(r2_[1], M + 112, fy - i * 13, 7.5); });
+  [['JIKR', f.jikr || '—'], ['IKOF', f.ikof || '—'], [L.no, inv.status === 'draft' ? '—' : (f.number || c.fiscal.bu + '/' + inv.ordNum + '/' + inv.year + '/' + c.fiscal.enu)], [L.date, f.at || '—'], [L.type, L.noncash + ' / ' + ({ ACCOUNT: L.payAcc, FACTORING: 'factoring' }[inv.payMethod || 'ACCOUNT'] || inv.payMethod)]].forEach(function (r2_, i) { t(r2_[0], M + 82, fy - i * 13, 7.5, reg, grey); t(r2_[1], M + 112, fy - i * 13, 7.5); });
   // lines
   y = y - 150;
   var cols = [[L.desc, M + 6, 'l'], [L.qty, 300, 'r'], [L.net, 355, 'r'], [L.gross, 405, 'r'], [L.disc, 440, 'r'], [L.tnet, 497, 'r'], [L.tgross, W - M - 4, 'r']];
@@ -3615,9 +3622,9 @@ async function invMakePdf(inv) {
     var tl = invLine(l, vp), dl = wrap(l.desc || '', reg, 7.5, 230);
     if (y - 14 - dl.length * 10 < 200) { page = doc.addPage([W, H]); y = H - M - 20; }
     t(wrap(l.name || '', bold, 9, 240)[0], M + 6, y, 9, bold);
-    rt(String(l.qty).replace('.', ',') + ' ' + ceUnitText(l.unit, Number(l.qty) || 0, inv.lang === 'en' ? 'en' : 'me'), 300, y, 8.5);
+    rt(String(sg * l.qty).replace('.', ',') + ' ' + ceUnitText(l.unit, Number(l.qty) || 0, inv.lang === 'en' ? 'en' : 'me'), 300, y, 8.5);
     rt(String(tl.unitNet).replace('.', ','), 355, y, 8.5); rt(fmt(tl.unitGross), 405, y, 8.5); rt(l.disc ? String(l.disc).replace('.', ',') : '/', 440, y, 8.5);
-    rt(money(tl.net), 497, y, 8.5); rt(money(tl.gross), W - M - 4, y, 8.5);
+    rt(money(sg * tl.net), 497, y, 8.5); rt(money(sg * tl.gross), W - M - 4, y, 8.5);
     dl.forEach(function (s, i) { t(s, M + 6, y - 12 - i * 10, 7.5, reg, grey); });
     y -= 18 + dl.length * 10;
     page.drawLine({ start: { x: M, y: y + 6 }, end: { x: W - M, y: y + 6 }, thickness: 0.5, color: line });
@@ -3639,7 +3646,7 @@ async function invMakePdf(inv) {
   var op = operatorOf(inv.issuedBy || inv.by);
   t(L.issued + ': ' + userName(inv.issuedBy || inv.by) + (op ? ' / ' + op : ''), M, y, 8.5); t(L.received + ':', 330, y, 8.5);
   page.drawLine({ start: { x: M, y: y - 34 }, end: { x: 270, y: y - 34 }, thickness: 0.8, color: ink }); page.drawLine({ start: { x: 330, y: y - 34 }, end: { x: W - M, y: y - 34 }, thickness: 0.8, color: ink });
-  t('DAA Pay – DAA Montenegro d.o.o. / ' + c.fiscal.sw, M, y - 56, 7, reg, grey);
+  t('DAA Pay – DAA Montenegro d.o.o. / ' + ((inv.fiscal || {}).sw || c.fiscal.sw), M, y - 56, 7, reg, grey);
   return doc.save();
 }
 function invFile(inv) { var b = invBuyer(inv); return ((inv.type === 'advance' ? 'Avansni racun ' : 'Racun ') + (inv.status === 'draft' ? 'NACRT' : inv.ordNum + '-' + inv.year) + ' - ' + (b.name || '')).replace(/[čćšžđČĆŠŽĐ]/g, function (x) { return { č: 'c', ć: 'c', š: 's', ž: 'z', đ: 'dj', Č: 'C', Ć: 'C', Š: 'S', Ž: 'Z', Đ: 'Dj' }[x]; }).replace(/[^\x20-\x7E]/g, '').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 110) + '.pdf'; }
@@ -3647,7 +3654,7 @@ function invFile(inv) { var b = invBuyer(inv); return ((inv.type === 'advance' ?
 // ---------- screens
 function Invoices() {
   if (!invAllowed()) return html`<main class="page wrap gut"><div class="card empty">Outgoing invoices are for the CEO, Super-admin, office manager and account managers.</div></main>`;
-  if (G.ui.inv) return html`<${InvEditor} key=${G.ui.inv} />`;
+  if (G.ui.inv) return html`<${InvEditor} key=${G.ui.inv + ':' + (G.ui.invRev || 0)} />`;
   var sub = G.ui.invView || 'list';
   return html`<main class="page wrap gut">
     <section class="card pad row" style="justify-content: space-between; gap: 12px" aria-label="Invoices">
@@ -3669,7 +3676,7 @@ function InvList() {
     var tq = fold(f.q).trim(); return !tq || fold([invNo(i), invBuyer(i).name, invBuyer(i).pib, i.title, (i.lines || []).map(function (l) { return l.name; }).join(' '), fmt(invTotals(i).gross)].join(' ')).indexOf(tq) >= 0;
   }).sort(function (a, b) { return (b.issueDate || '').localeCompare(a.issueDate || '') || (b.ts || 0) - (a.ts || 0); });
   var open = function (i) { setUi({ inv: i.id }); };
-  var stBadge = function (i) { return i.status === 'draft' ? html`<span class="badge s1">Draft</span>` : html`<span class=${'badge ' + PAY_STATUS[i.pay || 'unpaid'][2]}>${PAY_STATUS[i.pay || 'unpaid'][1]}</span>`; };
+  var stBadge = function (i) { return i.status === 'draft' ? html`<span class="badge s1">Draft</span>` : i.status === 'pending' ? html`<span class="badge s5">No JIKR yet</span>` : i.type === 'corrective' ? html`<span class="badge s0">Corrective</span>` : i.cancelled ? html`<span class="badge s5">Cancelled</span>` : html`<span class=${'badge ' + PAY_STATUS[i.pay || 'unpaid'][2]}>${PAY_STATUS[i.pay || 'unpaid'][1]}</span>`; };
   return html`<section class="card pad grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))" aria-label="Filters">
       <${Field} label="Search"><input id="iv-q" class="inp" type="search" placeholder="Number, client, PIB, service, amount" value=${f.q} onInput=${inputOn(f, setF, 'q')} /><//>
       <${Field} label="Status"><select id="iv-st" class="inp" value=${f.st} onChange=${inputOn(f, setF, 'st')}><option value="all">All</option><option value="draft">Drafts</option>${Object.keys(PAY_STATUS).map(function (k) { return html`<option value=${k}>${PAY_STATUS[k][1]}</option>`; })}</select><//>
@@ -3678,7 +3685,7 @@ function InvList() {
       : narrow ? html`<section class="mlist">${list.map(function (i) { var t = invTotals(i); return html`<article key=${i.id} class="mcard"><button class="namebtn" style="all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 2px" onClick=${function () { open(i); }}><span class="mono" style="font-size: 12px">${invNo(i)}</span><b>${invBuyer(i).name || '(no client)'}</b><span class="muted" style="font-size: 13px">${i.title || (i.lines[0] || {}).name || ''}</span></button><div class="mcf">${stBadge(i)}<span>${isoToDate(i.issueDate)}</span><span class="amt num">${fmt(t.gross)} €</span></div></article>`; })}</section>`
       : html`<section class="card" style="overflow-x: auto"><table class="t"><thead><tr><th style="padding: 10px 16px">Number</th><th>Client</th><th>Issued</th><th>Due</th><th>Status</th><th class="r">Excl. VAT</th><th class="r" style="padding-right: 16px">Total</th></tr></thead>
         <tbody>${list.map(function (i) { var t = invTotals(i), late = i.status !== 'draft' && i.pay !== 'paid' && i.pay !== 'uncollectable' && i.dueDate && i.dueDate < todayIso(); return html`<tr key=${i.id} style="cursor: pointer" onClick=${function () { open(i); }}>
-          <td class="mono" style="padding-left: 16px; white-space: nowrap">${invNo(i)}${i.type === 'advance' ? html`<div class="muted" style="font-size: 11px; font-family: var(--sans)">Advance</div>` : ''}</td>
+          <td class="mono" style="padding-left: 16px; white-space: nowrap">${invNo(i)}${i.type !== 'invoice' && INV_TYPE_LABEL[i.type] ? html`<div class="muted" style="font-size: 11px; font-family: var(--sans)">${INV_TYPE_LABEL[i.type][1]}</div>` : ''}</td>
           <td><button class="link" style="text-align: left" onClick=${function (e) { e.stopPropagation(); open(i); }}>${invBuyer(i).name || '(no client)'}</button><div class="muted" style="font-size: 12px">${i.title || ''}</div></td>
           <td class="num" style="white-space: nowrap">${isoToDate(i.issueDate)}</td><td class="num" style=${'white-space: nowrap' + (late ? '; color: var(--danger); font-weight: 600' : '')}>${isoToDate(i.dueDate)}</td><td>${stBadge(i)}</td>
           <td class="r num" style="white-space: nowrap">${fmt(t.net)} €</td><td class="r num" style="padding-right: 16px; font-weight: 600; white-space: nowrap">${fmt(t.gross)} €</td></tr>`; })}</tbody></table></section>`}`;
@@ -3711,6 +3718,24 @@ function InvEditor() {
   }
   async function pdf() { if (draft && dirty && !(await save())) return; setBusy(true); try { await saveFile(invFile(inv), await invMakePdf(inv)); } catch (e) { toast('Could not create the PDF: ' + (e.message || e), true); } setBusy(false); }
   async function remove() { if (!confirm('Delete this draft?')) return; if (await del('invoices', inv.id)) { toast('Draft deleted.'); setUi({ inv: null }); } }
+  async function fiscal(mode) {
+    var b = inv.buyer || {};
+    if (mode === 'issue') {
+      if (!inv.id) { setErr('Save the draft first, check it, then fiscalize.'); return; }
+      if (dirty && !(await save())) return;
+      if (!confirm('Fiscalize this invoice?\n\n' + (b.name || '') + ' · ' + fmt(tot.gross) + ' € incl. PDV\n\nIt is registered with the Tax Administration and can then only be cancelled with a corrective invoice.')) return;
+    }
+    if (mode === 'correct' && !confirm('Cancel invoice ' + invNo(inv) + ' with a corrective invoice?\n\nA corrective invoice with the same lines in negative amounts is fiscalized and refers to this invoice. Issue a new, correct invoice afterwards if needed.')) return;
+    setBusy(true); setErr('');
+    try {
+      var r = await window.daa.post('/api/invoices/' + (mode === 'issue' ? 'fiscalize' : mode), { id: inv.id });
+      if (r.ok || r.pending) { try { await window.daa.refresh(); } catch (e) {} G.ui.invRev = (G.ui.invRev || 0) + 1; setUi({ inv: r.id || inv.id }); }
+      if (r.ok) toast((mode === 'correct' ? 'Corrective invoice ' : 'Fiscalized: invoice ') + r.number + ' · JIKR ' + r.jikr);
+      else if (r.pending) toast('Invoice ' + r.number + ' was issued without JIKR because of a technical error (' + r.message + '). DAA Pay re-sends it; you can also use Re-send now.', true);
+      else setErr('The Tax Administration refused it' + (r.code ? ' (code ' + r.code + ')' : '') + ': ' + r.message);
+    } catch (ex) { setErr(ex.message); }
+    setBusy(false);
+  }
   function back() { if (dirty && !confirm('Leave without saving?')) return; G.ui.invCopy = null; setUi({ inv: null }); }
   async function savePay() {
     var p = { pay: payEd.pay, payAt: stamp(), payBy: G.me.id };
@@ -3725,12 +3750,19 @@ function InvEditor() {
         <div style="min-width: 0"><div class="mono" style="font-size: 13px">${draft ? 'Draft' : c.fiscal.bu + '/' + inv.ordNum + '/' + inv.year + '/' + c.fiscal.enu}${dirty ? html` <span class="badge s1">Not saved</span>` : ''}</div><h2 style="font-size: 18px">${(inv.type === 'advance' ? 'Advance invoice' : 'Invoice') + (draft ? '' : ' ' + invNo(inv))}${(inv.buyer || {}).name ? ' · ' + inv.buyer.name : ''}</h2></div></div>
       <div class="row">
         ${draft && html`<button class="btn" disabled=${busy} onClick=${save}>${busy ? 'Working…' : 'Save as draft'}</button>`}
-        ${draft && invCanIssue() && html`<button class="btn o" disabled=${true} title="Fiscalization is being verified and is switched off for now.">Save and fiscalize</button>`}
+        ${draft && invCanIssue() && html`<button class="btn o" disabled=${busy || !c.fiscal.enabled} title=${c.fiscal.enabled ? 'Register the invoice with the Tax Administration' : 'Fiscalization is switched off (Invoices → Settings).'} onClick=${function () { fiscal('issue'); }}>Save and fiscalize</button>`}
         <button class="btn o sm" disabled=${busy} onClick=${pdf}>${I.dl} PDF</button>
       </div>
     </section>
     ${err && html`<div class="alert e" role="alert">${err}</div>`}
-    ${draft && !c.fiscal.enabled && html`<div class="alert i" style="font-size: 13px">Fiscalization is switched off while it is being verified with DAA's certificate. Drafts can be prepared, checked and downloaded (marked NACRT); they get their number, IKOF, JIKR and QR code when fiscalized.</div>`}
+    ${draft && !c.fiscal.enabled && html`<div class="alert i" style="font-size: 13px">Fiscalization is switched off. Drafts can be prepared, checked and downloaded (marked NACRT); they get their number, IKOF, JIKR and QR code when fiscalized.</div>`}
+    ${draft && inv.lastError && html`<div class="alert e" style="font-size: 13px">Last attempt (${inv.lastErrorAt || ''}) was refused: ${inv.lastError}</div>`}
+    ${!draft && html`<section class="card pad stack" aria-label="Fiscal data" style=${'gap: 6px; border-color: ' + (inv.status === 'pending' ? 'var(--danger)' : 'var(--line)')}>
+      <div class="row" style="justify-content: space-between"><b>${(INV_TYPE_LABEL[inv.type] || INV_TYPE_LABEL.invoice)[1]} ${invNo(inv)}${inv.type === 'corrective' ? ' · corrects ' + (inv.correctsNo || '') : ''}${inv.cancelled ? ' · cancelled by ' + (inv.correctedNo || '') : ''}</b>${inv.fiscal && inv.fiscal.qrUrl && inv.status === 'fiscalized' && html`<a class="btn q sm" href=${inv.fiscal.qrUrl} target="_blank" rel="noopener">${I.ext} Verify on tax portal</a>`}</div>
+      <div class="mono" style="font-size: 12px; overflow-wrap: anywhere">JIKR ${(inv.fiscal || {}).jikr || '—'} · IKOF ${(inv.fiscal || {}).ikof || '—'} · ${(inv.fiscal || {}).number || ''} · ${(inv.fiscal || {}).at || ''}${(inv.fiscal || {}).env === 'test' ? ' · TEST' : ''}</div>
+      ${inv.status === 'pending' && html`<div class="alert e" style="font-size: 13px">Issued without JIKR because of a technical error (${inv.lastError || ''}). It must be re-sent within 48 hours with the same IKOF; DAA Pay retries daily.${invCanIssue() ? html` <button class="btn sm" disabled=${busy} onClick=${function () { fiscal('retry'); }}>Re-send now</button>` : ''}</div>`}
+      ${inv.status === 'fiscalized' && inv.type !== 'corrective' && !inv.cancelled && invCanIssue() && html`<button class="btn q sm" style="align-self: flex-start" disabled=${busy} onClick=${function () { fiscal('correct'); }}>Cancel with a corrective invoice</button>`}
+    </section>`}
 
     <section class="card pad stack" aria-label="New invoice">
       <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
@@ -3829,7 +3861,10 @@ function InvSettings() {
       </div>
       <b style="font-size: 14px; margin-top: 6px">Operator codes of the people who issue invoices</b>
       ${issuers.map(function (u) { return html`<div key=${u.id} class="row" style="flex-wrap: nowrap"><span style="flex: 1">${nameOf(u)} <span class="muted" style="font-size: 12px">${ROLE[u.role]}</span></span><input class="inp mono" style="max-width: 200px" aria-label=${'Operator code for ' + nameOf(u)} placeholder="e.g. gv983hs641" value=${f.operators[u.id] != null ? f.operators[u.id] : operatorOf(u.id)} onInput=${function (e) { var o = Object.assign({}, f); o.operators = Object.assign({}, f.operators); o.operators[u.id] = e.target.value.trim(); set(o); }} /></div>`; })}
-      <div class="muted" style="font-size: 12px">Fiscalization: ${c.fiscal.enabled ? 'on' : 'off while it is being verified (the certificate is stored on the server; the check against a known invoice must pass first).'}</div>
+      <div class="card pad row" style="justify-content: space-between; background: var(--bg)">
+        <div><b>Fiscalization ${c.fiscal.enabled ? 'is ON' : 'is OFF'}</b><div class="muted" style="font-size: 12px">${c.fiscal.enabled ? 'Save and fiscalize registers invoices with the Tax Administration (live service).' : "When on, Save and fiscalize registers invoices with the Tax Administration (live service), signed with DAA's certificate."}</div></div>
+        <button class=${'btn sm' + (c.fiscal.enabled ? ' q' : '')} onClick=${async function () { var on = !c.fiscal.enabled; if (!confirm(on ? 'Switch fiscalization ON? Invoices will be registered with the Tax Administration (live).' : 'Switch fiscalization OFF?')) return; var d = JSON.parse(JSON.stringify(byId(G.data.settings || [], 'company') || COMPANY_DEFAULT)); delete d.id; d.fiscal = Object.assign({}, COMPANY_DEFAULT.fiscal, d.fiscal || {}, { enabled: on }); if (await put('settings', 'company', d)) { toast('Fiscalization ' + (on ? 'switched on.' : 'switched off.')); logEv('data', 'Fiscalization switched ' + (on ? 'on' : 'off')); } }}>${c.fiscal.enabled ? 'Switch off' : 'Switch on'}</button>
+      </div>
       <div class="row"><button class="btn" onClick=${save}>Save settings</button></div>
     </section>`;
 }

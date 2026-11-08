@@ -1,9 +1,10 @@
 import { vapidKeys, sendPush } from './push.js';
+import { buildRequest, send as fiscalSend, importKey as fiscalKey, qrUrl as fiscalQr, FS_URL } from './fiscal.js';
 // DAA Pay — Cloudflare Worker: API, sign-in, role rules, files, email, weekly report, backups.
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
 const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces', 'invoices', 'settings'];
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.9.0';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -282,6 +283,9 @@ async function api(req, env, url, ctx) {
   if (p === '/api/numbers/fill' && m === 'POST') return fillNumbers(env);
   if (p === '/api/notify/denied' && m === 'POST') return notifyDenied(env, me, await body(req));
   if (p === '/api/notify/beneficiary' && m === 'POST') return notifyBeneficiary(env, me, await body(req));
+  if (p === '/api/invoices/fiscalize' && m === 'POST') return fiscalize(env, me, await body(req), 'issue');
+  if (p === '/api/invoices/retry' && m === 'POST') return fiscalize(env, me, await body(req), 'retry');
+  if (p === '/api/invoices/correct' && m === 'POST') return fiscalize(env, me, await body(req), 'correct');
   if (p === '/api/costs' && m === 'GET') return projectCosts(env, me);
   if (p === '/api/regs/approve' && m === 'POST') return approveReg(env, me, await body(req));
   if (p === '/api/backup' && m === 'GET') return backupApi(env, me);
@@ -932,7 +936,76 @@ async function importApi(env, me, b) {
 }
 
 // ---------------------------------------------------------------- scheduled jobs
+// ---------------------------------------------------------------- fiscalization of outgoing invoices
+// issue: number, sign and register a draft. retry: re-send an invoice issued without JIKR (technical error,
+// same IKOF, within 48 h). correct: cancel a fiscalized invoice with a corrective invoice (negative amounts, IIC reference).
+const UNIT_TXT = { kom: 'kom', set: 'set', dan: 'dan', sdan: 'snimajući dan', sat: 'sat', smjena: 'smjena', osoba: 'osoba', video: 'video', format: 'format', reel: 'reel', spot: 'spot', sek: 'sekunda', aranzman: 'aranžman', angazman: 'angažman', influenser: 'influenser', m2: 'm2', km: 'km', emit: 'emitovanje', rot: 'rotacija', cpm: 'CPM', mjesec: 'mjesec', pausal: 'paušal' };
+const DISPLAY_MONTHS = ['januar', 'februar', 'mart', 'april', 'maj', 'jun', 'jul', 'avgust', 'septembar', 'oktobar', 'novembar', 'decembar'];
+const fiscalDisplay = (iso) => { const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}:\d{2})/); return m ? +m[3] + '. ' + DISPLAY_MONTHS[+m[2] - 1] + ' ' + m[1] + ', ' + m[4] : iso; };
+async function fiscalize(env, me, b, mode) {
+  if (!(isTop(me.role) || me.role === 'om')) fail(403, 'Only the CEO, Super-admin or office manager can issue invoices.');
+  const co0 = (await getDoc(env, 'settings', 'company')) || {};
+  const co = Object.assign({ pib: '02764318', name: 'DAA Montenegro d.o.o.', address: 'Svetog Petra Cetinjskog 96/17', town: 'Podgorica' }, co0);
+  co.fiscal = Object.assign({ bu: 'ta408js210', enu: 'gi025rb539', sw: 'pm646iu973' }, co0.fiscal || {});
+  if (!co.fiscal.enabled) fail(409, 'Fiscalization is switched off (Invoices → Settings).');
+  if (!env.FISCAL_KEY_PEM || !env.FISCAL_CERT_PEM) fail(503, 'The fiscal certificate is not on the server.');
+  const id = String(b.id || ''), inv = await getDoc(env, 'invoices', id);
+  if (!inv) fail(404, 'That invoice no longer exists.');
+  const operator = mode === 'retry' && inv.fiscal && inv.fiscal.operator ? inv.fiscal.operator : (co0.operators || {})[me.id] || (/^nikola\.radonjic@/.test(me.email || '') ? 'gv983hs641' : '');
+  if (!/^[a-z]{2}[0-9]{3}[a-z]{2}[0-9]{3}$/.test(operator)) fail(400, 'You have no operator code. Add it in Invoices → Settings.');
+  const envName = env.FISCAL_ENV === 'test' ? 'test' : 'prod', key = await fiscalKey(env.FISCAL_KEY_PEM), all = await allDocs(env, 'invoices');
+  const year = new Date().getFullYear();
+  const nextOrd = () => all.filter((x) => x.year === year && x.ordNum && (x.fiscal || {}).enu === co.fiscal.enu).reduce((n, x) => Math.max(n, x.ordNum), 0) + 1;
+  let target = inv, docId = id, ord, corrective = null, issuedAt = null, subseq = null;
+  if (mode === 'issue') {
+    if (inv.status !== 'draft') fail(409, 'This invoice is already issued.');
+    const bu = inv.buyer || {};
+    if (!/^\d{8}$|^\d{13}$/.test(bu.pib || '') && (bu.country || 'Crna Gora').toLowerCase().match(/crna gora|montenegro|^$/)) fail(400, 'The client needs a valid PIB (Partners).');
+    if (!(inv.lines || []).some((l) => String(l.name || '').trim())) fail(400, 'The invoice has no lines.');
+    ord = nextOrd();
+  } else if (mode === 'retry') {
+    if (inv.status !== 'pending') fail(409, 'Only invoices issued without JIKR are re-sent.');
+    ord = inv.ordNum; issuedAt = inv.fiscal.issued; subseq = 'TECHNICALERROR';
+  } else {
+    if (inv.status !== 'fiscalized' || inv.type === 'corrective') fail(409, 'Only a fiscalized invoice can be corrected.');
+    if (all.some((x) => x.correctsId === id && x.status !== 'draft')) fail(409, 'This invoice was already corrected.');
+    corrective = { iic: inv.fiscal.ikof, issued: inv.fiscal.issued };
+    docId = 'iv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    target = Object.assign({}, inv, { type: 'corrective', correctsId: id, correctsNo: inv.ordNum + '/' + inv.year, pay: 'paid', note: (inv.lang === 'en' ? 'Corrective invoice for invoice ' : 'Korektivni račun za račun ') + inv.ordNum + '/' + inv.year + ' (IKOF ' + inv.fiscal.ikof + ').', by: me.id, ts: now() });
+    delete target.fiscal; delete target.paidAmount;
+    ord = nextOrd();
+  }
+  const built = await buildRequest({ key, certPem: env.FISCAL_CERT_PEM, inv: Object.assign({}, target, { lines: (target.lines || []).map((l) => Object.assign({}, l, { unitLabel: UNIT_TXT[l.unit] || l.unit })) }), co, ord, year, operator, now: now(), corrective, subseq, issuedAt });
+  if (mode === 'retry' && built.iic !== inv.fiscal.ikof) fail(500, 'Re-sending would change the IKOF; nothing was sent.');
+  const res = await fiscalSend(env.FISCAL_URL || FS_URL[envName], built.envelope);   // FISCAL_URL only for local tests
+  const stamp_ = podgoricaStamp().short;
+  await env.FILES.put('fiscal/' + year + '/' + ord + '-' + built.iic + '-' + Date.now() + '.xml', built.envelope + '\n<!-- response -->\n' + (res.response || res.message || ''), { httpMetadata: { contentType: 'application/xml' } }).catch(() => {});
+  const fiscal = { ikof: built.iic, issued: built.issued, at: fiscalDisplay(built.issued), number: co.fiscal.bu + '/' + ord + '/' + year + '/' + co.fiscal.enu, bu: co.fiscal.bu, enu: co.fiscal.enu, sw: co.fiscal.sw, operator, env: envName,
+    qrUrl: fiscalQr(envName, { iic: built.iic, tin: co.pib, issued: built.issued, ord, bu: co.fiscal.bu, tcr: co.fiscal.enu, sw: co.fiscal.sw, total: built.totals.gross }) };
+  if (res.ok) {
+    const done = Object.assign({}, target, { status: 'fiscalized', ordNum: ord, year, issueDate: built.issued.slice(0, 10), fiscal: Object.assign(fiscal, { jikr: res.jikr, uuid: built.uuid }), issuedBy: target.issuedBy || me.id, issuedAt: target.issuedAt || stamp_, lastError: '' });
+    await putDoc(env, 'invoices', docId, done);
+    if (mode === 'correct') await putDoc(env, 'invoices', id, Object.assign({}, inv, { cancelled: true, correctedById: docId, correctedNo: ord + '/' + year }));
+    await logEvent(env, me.id, 'payment', (mode === 'correct' ? 'Corrective invoice ' : 'Fiscalized invoice ') + ord + '/' + year + ' · ' + ((target.buyer || {}).name || '') + ' · ' + built.totals.gross + ' EUR · JIKR ' + res.jikr);
+    return json({ ok: true, id: docId, number: ord + '/' + year, jikr: res.jikr });
+  }
+  if (res.technical && mode !== 'correct') {
+    // Technical error: the invoice is issued with its IKOF and must be re-sent within 48 hours with the same IKOF.
+    await putDoc(env, 'invoices', docId, Object.assign({}, target, { status: 'pending', ordNum: ord, year, issueDate: built.issued.slice(0, 10), fiscal, issuedBy: target.issuedBy || me.id, issuedAt: target.issuedAt || stamp_, lastError: res.message, retries: (target.retries || 0) + (mode === 'retry' ? 1 : 0) }));
+    await logEvent(env, me.id, 'payment', 'Invoice ' + ord + '/' + year + ' issued without JIKR (technical error, re-send within 48 h): ' + res.message);
+    return json({ ok: false, pending: true, number: ord + '/' + year, message: res.message });
+  }
+  if (mode === 'issue') await putDoc(env, 'invoices', id, Object.assign({}, inv, { lastError: (res.code ? res.code + ': ' : '') + res.message, lastErrorAt: stamp_ }));
+  await logEvent(env, me.id, 'payment', 'Fiscalization refused (' + (res.code || '') + '): ' + res.message);
+  return json({ ok: false, code: res.code, message: res.message });
+}
+async function retryPendingInvoices(env) {
+  for (const x of (await allDocs(env, 'invoices')).filter((i) => i.status === 'pending')) {
+    try { await fiscalize(env, { id: x.issuedBy || x.by, role: 'sa', email: '' }, { id: x.id }, 'retry'); } catch (e) { /* stays pending; shown in the app */ }
+  }
+}
 async function dailyJobs(env) {
+  await retryPendingInvoices(env).catch(() => {});
   const day = new Date().toISOString().slice(0, 10);
   await env.FILES.put('backups/' + day + '.json', JSON.stringify(await exportAll(env)), { httpMetadata: { contentType: 'application/json' } });
   const list = await env.FILES.list({ prefix: 'backups/' });

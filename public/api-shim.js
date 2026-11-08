@@ -108,7 +108,7 @@
   window.daa = {
     get: function (p) { return call('GET', p); },
     post: function (p, b) { return call('POST', p, b || {}); },
-    start: start, stop: stop,
+    start: start, stop: stop, refresh: function () { return pull(); },
     onSignedOut: function (fn) { onSignedOut = fn; },
     onMe: null
   };
