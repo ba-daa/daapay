@@ -205,6 +205,10 @@ dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break:
 .inp.off { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .ce-tl { justify-content: space-between; flex-wrap: nowrap; }
 .ce-ed { padding-bottom: 40px; }
+.iv-line { display: grid; grid-template-columns: minmax(0, 1fr) 110px 110px 80px 110px 84px 80px 120px 44px; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line-2); align-items: start; }
+.iv-line > label { display: flex; flex-direction: column; gap: 4px; }
+@media (min-width: 901px) { .iv-line .ce-lab { display: block; } }
+@media (max-width: 900px) { .iv-line { grid-template-columns: 1fr 1fr; } .iv-line > :first-child { grid-column: 1 / -1; } .iv-line .r { text-align: left; } }
 .pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 4px 2px 24px; }
 .mgrbtn { text-align: left; background-image: var(--chev); background-repeat: no-repeat; background-position: right 14px center; background-size: 12px 8px; padding-right: 40px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mgri { gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; flex-wrap: nowrap; }
@@ -347,8 +351,8 @@ var BUYER_TIN = '02764318';
 var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
-var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.7.0';
+var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces', 'invoices', 'settings'];
+var APP_VERSION = '0.8.0';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -1292,6 +1296,7 @@ function Header() {
       <button class=${'tab' + (G.ui.tab === 'queue' ? ' on' : '')} aria-current=${G.ui.tab === 'queue' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'queue' }); }}>Queue</button>
       <button class=${'tab' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null }); }}>Partners</button>
       <button class=${'tab' + (G.ui.tab === 'ce' ? ' on' : '')} aria-current=${G.ui.tab === 'ce' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'ce', open: null, ce: null }); }}>Cost estimates</button>
+      ${invAllowed() && html`<button class=${'tab' + (G.ui.tab === 'inv' ? ' on' : '')} aria-current=${G.ui.tab === 'inv' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'inv', open: null, inv: null }); }}>Invoices</button>`}
       ${usersAllowed && html`<button class=${'tab' + (G.ui.tab === 'users' ? ' on' : '')} aria-current=${G.ui.tab === 'users' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'users', open: null }); }}>Users & roles${regsN ? html`<span class="pill">${regsN}</span>` : ''}</button>`}
     </nav>
     <button class="btn addbtn" aria-label="Add to payment queue" onClick=${function () { setUi({ modal: 'choose', bell: false, menu: false }); }}>${I.plus}<span class="lbl">Add to payment queue</span></button>
@@ -1323,6 +1328,7 @@ function Header() {
         <button class=${'navitem' + (G.ui.tab === 'queue' ? ' on' : '')} aria-current=${G.ui.tab === 'queue' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'queue', nav: false }); }}>Queue</button>
         <button class=${'navitem' + (G.ui.tab === 'bens' ? ' on' : '')} aria-current=${G.ui.tab === 'bens' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'bens', open: null, nav: false }); }}>Partners</button>
         <button class=${'navitem' + (G.ui.tab === 'ce' ? ' on' : '')} aria-current=${G.ui.tab === 'ce' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'ce', open: null, ce: null, nav: false }); }}>Cost estimates</button>
+        ${invAllowed() && html`<button class=${'navitem' + (G.ui.tab === 'inv' ? ' on' : '')} aria-current=${G.ui.tab === 'inv' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'inv', open: null, inv: null, nav: false }); }}>Invoices</button>`}
         ${usersAllowed && html`<button class=${'navitem' + (G.ui.tab === 'users' ? ' on' : '')} aria-current=${G.ui.tab === 'users' ? 'page' : 'false'} onClick=${function () { setUi({ tab: 'users', open: null, nav: false }); }}>Users & roles${regsN ? html`<span class="pill" style="margin-left: auto">${regsN}</span>` : ''}</button>`}
       </div>
       <div class="stack" style="gap: 4px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line-2)">
@@ -2691,7 +2697,7 @@ function App() {
   else if (!G.me && G.setup) body = html`<${FirstRun} />`;
   else if (!G.me) body = authView === 'login' ? html`<${Login} onRegister=${function () { setAuth('register'); }} />` : html`<${Register} onLogin=${function () { setAuth('login'); }} />`;
   else if (!G.dataReady) body = html`<main class="auth gut"><div class="muted">Loading your payment queue…</div></main>`;
-  else body = html`<${Header} />${G.ui.tab === 'users' && (isTop(G.me.role) || G.me.role === 'am') ? html`<${Users} />` : G.ui.tab === 'bens' ? html`<${Beneficiaries} />` : G.ui.tab === 'ce' ? html`<${Estimates} />` : html`<${Queue} />`}
+  else body = html`<${Header} />${G.ui.tab === 'users' && (isTop(G.me.role) || G.me.role === 'am') ? html`<${Users} />` : G.ui.tab === 'bens' ? html`<${Beneficiaries} />` : G.ui.tab === 'ce' ? html`<${Estimates} />` : G.ui.tab === 'inv' ? html`<${Invoices} />` : html`<${Queue} />`}
     ${G.ui.open && html`<${Drawer} key=${G.ui.open} />`}${G.ui.modal && html`<${AddModal} key=${G.ui.modal} />`}${G.ui.profile && html`<${Profile} />`}`;
   return html`${G.err && html`<div class="alert e gut" role="alert" style="border-radius: 0">${G.err}</div>`}${body}${G.ui.privacy && html`<${Privacy} />`}${G.ui.help && html`<${HelpCenter} />`}${G.ui.install && html`<${InstallApp} />`}${G.ui.bug && html`<${ReportBug} />`}${G.ui.toast && html`<div class=${'toast' + (G.ui.toast.bad ? ' e' : '')} role="status">${G.ui.toast.text}</div>`}`;
 }
@@ -3117,6 +3123,7 @@ function CeEditor() {
   var ss = useState(function () { return src ? JSON.parse(JSON.stringify(src)) : null; }), ce = ss[0], setCe = ss[1];
   var ds = useState(isNew && !!G.ui.ceCopy), dirty = ds[0], setDirty = ds[1];
   var ps = useState(null), pick = ps[0], setPick = ps[1];       // section index for the service picker
+  var cis = useState(false), toInv = cis[0], setToInv = cis[1];
   var es = useState(''), err = es[0], setErr = es[1], bs = useState(false), busy = bs[0], setBusy = bs[1];
   var ms = useState(false), mkDefault = ms[0], setMkDefault = ms[1];
   var narrow = useNarrow();
@@ -3292,8 +3299,9 @@ function CeEditor() {
     <${CeCosts} ce=${ce} />
     <div class="row" style="justify-content: space-between">
       <div class="muted" style="font-size: 12px">${ce.id ? 'Created by ' + userName(ce.by) + ' · ' + (ce.created || '') + (ce.updatedAt ? ' · last saved ' + ce.updatedAt + ' by ' + userName(ce.updatedBy) : '') : 'Not saved yet'}</div>
-      <div class="row">${ce.id && ce.base != null && html`<button class="btn o sm" onClick=${function () { duplicate(true); }}>New iteration (${ce.base}-${pad(ceNextIter(ce.base, ceYear(ce)), 2)})</button>`}${ce.id && html`<button class="btn q sm" onClick=${function () { duplicate(false); }}>Copy as new estimate</button>`}${ce.id && canDelete && html`<button class="btn q sm" onClick=${remove}>${I.trash} Delete</button>`}</div>
+      <div class="row">${ce.id && invAllowed() && html`<button class="btn sm" onClick=${function () { if (dirty) { toast('Save the estimate first.', true); return; } setToInv(true); }}>Create invoice</button>`}${ce.id && ce.base != null && html`<button class="btn o sm" onClick=${function () { duplicate(true); }}>New iteration (${ce.base}-${pad(ceNextIter(ce.base, ceYear(ce)), 2)})</button>`}${ce.id && html`<button class="btn q sm" onClick=${function () { duplicate(false); }}>Copy as new estimate</button>`}${ce.id && canDelete && html`<button class="btn q sm" onClick=${remove}>${I.trash} Delete</button>`}</div>
     </div>
+    ${toInv && html`<${CeToInvoice} ce=${ce} onClose=${function () { setToInv(false); }} />`}
     ${pick != null && html`<${ServicePicker} cat=${pick} onPick=${addFromPrice} onClose=${function () { setPick(null); }} />`}
   </main>`;
 }
@@ -3460,7 +3468,7 @@ function Projects() {
             ${ed && ed.id === p.id ? edit : html`<div class="pj-row">
               <button class="link" style="text-align: left; min-height: 0" aria-expanded=${isOpen} onClick=${function () { setOpen(isOpen ? null : p.id); }}><span class="mono" style="font-size: 13px">${projNumber(p) || 'No number'}</span><br /><b>${p.name}</b></button>
               <span><span class="ce-lab">Estimates</span>${latest.length ? latest.length + (est.list.length ? ' · ' + est.list.length + ' approved' : '') : html`<span class="muted">None</span>`}</span>
-              <span class="r num"><span class="ce-lab">Estimated (NET)</span>${est.net ? ceMoney(est.net) : html`<span class="muted">—</span>`}</span>
+              <span class="r num"><span class="ce-lab">Estimated (NET)</span>${(function () { var iv = r2(G.data.invoices.filter(function (i) { return i.projectId === p.id && i.status !== 'draft'; }).reduce(function (n, i) { return n + invTotals(i).net; }, 0)); return iv ? html`<div class="muted" style="font-size: 11px">invoiced ${fmt(iv)} €</div>` : ''; })()}${est.net ? ceMoney(est.net) : html`<span class="muted">—</span>`}</span>
               <span class="r num"><span class="ce-lab">${costs ? 'Costs' : ''}</span>${costs ? ceMoney(cost) : ''}</span>
               <span class="r"><span class="ce-lab">${costs ? 'Margin' : ''}</span>${costs ? html`<${Margin} est=${est.net} cost=${cost} />` : ''}</span>
               <span class="row" style="gap: 0; flex-wrap: nowrap; justify-content: flex-end"><button class="btn q sm" onClick=${function () { setEd({ kind: 'project', id: p.id, clientId: p.clientId, name: p.name, no: p.no ? String(p.no) : '', year: p.year || '' }); }}>Edit</button>${top && html`<button class="icon" aria-label=${'Delete project ' + p.name} title="Delete project" onClick=${function () { delProject(p); }}>${I.trash}</button>`}</span>
@@ -3495,6 +3503,335 @@ function CeCosts(p) {
     ${pays.length ? html`${pays.map(function (x) { return html`<div key=${x.id} class="row" style="justify-content: space-between; font-size: 14px">${x.title ? html`<button class="link" style="text-align: left" onClick=${function () { setUi({ tab: 'queue', ce: null, open: x.id }); }}><span class="mono">${pqNo(x.pqn)}</span> ${x.title}</button>` : html`<span class="mono">${pqNo(x.pqn)}</span>`}<span class="row" style="gap: 10px"><span class=${'pst pst' + (x.status || 0)}>${STATUS[x.status || 0]}</span><span class="num">${ceMoney(costOf(x))}</span></span></div>`; })}
       <div class="row ce-tl" style="border-top: 1px solid var(--line); padding-top: 8px"><span>Estimate NET ${ceMoney(net)} − costs NET ${ceMoney(cost)}</span><${Margin} est=${net} cost=${cost} /></div>` : html`<div class="muted" style="font-size: 13px">None yet. In the payment queue, open a request → Linked to → DAA cost estimate.</div>`}
   </section>`;
+}
+
+// ================= OUTGOING INVOICES (izlazni računi) =================
+// Drafts are made here; fiscalization (IKOF/JIKR from the Tax Administration) is done by the server and
+// stays switched off until it is verified. Company details and fiscal codes live in settings/company.
+var INV_ROLES = ['sa', 'ceo', 'om', 'am'];
+function invAllowed() { return INV_ROLES.indexOf(G.me.role) >= 0; }
+function invCanIssue() { return isTop(G.me.role) || G.me.role === 'om'; }
+var COMPANY_DEFAULT = {
+  name: 'DAA Montenegro d.o.o.', address: 'Svetog Petra Cetinjskog 96/17', town: 'Podgorica', country: 'Crna Gora', phone: '+38267360212', email: 'office@daa.co.me', web: 'www.daa.co.me',
+  pib: '02764318', pdv: 'ME02764318', iban: 'ME25510000000003069702', bic: 'CKBCMEPG', accounts: 'CKB: 510-30697-02', vatPayer: true,
+  fiscal: { bu: 'ta408js210', enu: 'gi025rb539', sw: 'pm646iu973', enabled: false }, operators: {}, dueDays: 30
+};
+function company() { var s = byId(G.data.settings || [], 'company') || {}; var c = Object.assign({}, COMPANY_DEFAULT, s); c.fiscal = Object.assign({}, COMPANY_DEFAULT.fiscal, s.fiscal || {}); c.operators = Object.assign({}, s.operators || {}); return c; }
+function operatorOf(uid0) { var c = company(), u = byId(G.data.users, uid0); return c.operators[uid0] || (u && /nikola\.radonjic@/.test(u.email || '') ? 'gv983hs641' : ''); }
+var INV_TYPES = { invoice: ['Račun', 'Invoice'], advance: ['Avansni račun', 'Advance invoice'] };
+var PAY_METHODS = { ACCOUNT: 'ACCOUNT – transakcioni račun, virman', FACTORING: 'FACTORING', OTHER: 'OTHER' };
+var PAY_STATUS = { unpaid: ['Nije plaćen', 'Not paid', 's5'], partial: ['Djelimično plaćen', 'Partly paid', 's2'], paid: ['Plaćen', 'Paid', 's4'], uncollectable: ['Nenaplativ', 'Uncollectable', 's0'] };
+var INV_L = {
+  me: { inv: 'Račun', adv: 'Avansni račun', draft: 'NACRT – nije fiskalizovan', due: 'Rok za plaćanje', desc: 'Opis', qty: 'Kol.', unit: 'JM', net: 'Bez PDV', gross: 'Sa PDV', disc: 'Pop. %', tnet: 'Uk. bez PDV', tgross: 'Uk. sa PDV',
+    rate: 'PDV stopa', base: 'Osnovica za PDV', vat: 'Iznos poreza', sNet: 'Bez PDV-a:', sVat: 'PDV:', sTot: 'Total:', issued: 'Račun izdao', received: 'Račun preuzeo', note: 'Napomena', no: 'Broj', date: 'Datum', type: 'Vrsta', noncash: 'bezgotovinski',
+    pib: 'PIB', pdv: 'PDV', adr: 'Adresa', country: 'Država', place: 'Podgorica', notVat: 'Izdavalac nije u sistemu PDV-a.' },
+  en: { inv: 'Invoice', adv: 'Advance invoice', draft: 'DRAFT – not fiscalized', due: 'Payment due', desc: 'Description', qty: 'Qty', unit: 'Unit', net: 'Excl. VAT', gross: 'Incl. VAT', disc: 'Disc. %', tnet: 'Total excl. VAT', tgross: 'Total incl. VAT',
+    rate: 'VAT rate', base: 'VAT base', vat: 'VAT amount', sNet: 'Excl. VAT:', sVat: 'VAT:', sTot: 'Total:', issued: 'Issued by', received: 'Received by', note: 'Note', no: 'No.', date: 'Date', type: 'Type', noncash: 'non-cash',
+    pib: 'Tax ID (PIB)', pdv: 'VAT ID', adr: 'Address', country: 'Country', place: 'Podgorica', notVat: 'The issuer is not registered for VAT.' }
+};
+function r5(n) { return Math.round((Number(n) || 0) * 1e5) / 1e5; }
+// One line: price entered without PDV (mode net) or with PDV (mode gross); discount in %.
+function invLine(l, vatPayer) {
+  var rate = vatPayer ? Number(l.rate) || 0 : 0, q = Number(l.qty) || 0, d = 1 - (Number(l.disc) || 0) / 100, net, gross;
+  if (l.mode === 'gross') { gross = r2(q * (Number(l.priceGross) || 0) * d); net = r2(gross / (1 + rate / 100)); }
+  else { net = r2(q * (Number(l.price) || 0) * d); gross = r2(net * (1 + rate / 100)); }
+  var unitNet = l.mode === 'gross' ? r5((Number(l.priceGross) || 0) / (1 + rate / 100)) : r5(l.price), unitGross = l.mode === 'gross' ? r2(l.priceGross) : r2(unitNet * (1 + rate / 100));
+  return { net: net, vat: r2(gross - net), gross: gross, rate: rate, unitNet: unitNet, unitGross: unitGross };
+}
+function invTotals(inv) {
+  var by = {}, net = 0, vat = 0, gross = 0;
+  (inv.lines || []).forEach(function (l) { var t = invLine(l, inv.vatPayer !== false); net += t.net; vat += t.vat; gross += t.gross; var k = String(t.rate); by[k] = by[k] || { rate: t.rate, base: 0, vat: 0 }; by[k].base += t.net; by[k].vat += t.vat; });
+  return { net: r2(net), vat: r2(vat), gross: r2(gross), rates: Object.keys(by).map(function (k) { return { rate: by[k].rate, base: r2(by[k].base), vat: r2(by[k].vat) }; }).sort(function (a, b) { return b.rate - a.rate; }) };
+}
+function invNo(inv) { return inv.status === 'draft' ? 'Nacrt' : inv.ordNum + '/' + inv.year; }
+function invBuyer(inv) { return inv.buyer || {}; }
+function buyerFromClient(clientId) {
+  var b = partnerOfClient(clientId) || {}, c = byId(G.data.clients, clientId) || {};
+  return { clientId: clientId, name: b.name || c.name || '', pib: b.pib || '', pdv: b.pdv || '', address: b.address || '', town: b.town || '', country: b.country || 'Crna Gora', email: b.email || '' };
+}
+function invBlank() {
+  var c = company(), d = new Date(); d.setDate(d.getDate() + (c.dueDays || 30));
+  return { type: 'invoice', lang: 'me', clientId: '', buyer: {}, issueDate: todayIso(), dueDate: d.toISOString().slice(0, 10), vatPayer: c.vatPayer !== false, payMethod: 'ACCOUNT',
+    lines: [{ id: uid('l'), name: '', desc: '', unit: 'kom', qty: 1, mode: 'net', price: 0, priceGross: 0, rate: 21, disc: 0 }], note: '', pay: 'unpaid', ceId: '', projectId: '' };
+}
+// An estimate → invoice lines: per section or per line, the agency fee included or as its own line, all of it or a part (e.g. a 50% advance).
+function invFromCe(ce, opt) {
+  var share = (Number(opt.share) || 100) / 100, t = ceTotals(ce), feeK = opt.fee === 'included' && t.feeBase ? 1 + (Number(ce.fee) || 0) / 100 : 1, lines = [];
+  var ref = (ce.lang === 'en' || opt.lang === 'en' ? 'Cost estimate ' : 'Predračun ') + ceNumber(ce) + (ce.date ? (opt.lang === 'en' ? ' of ' : ' od ') + isoToDate(ce.date) + '.' : '') + (projNumber(byId(G.data.projects, ce.projectId)) ? ' · ' + (opt.lang === 'en' ? 'Project ' : 'Projekat ') + projNumber(byId(G.data.projects, ce.projectId)) : '');
+  (ce.sections || []).forEach(function (s, si) {
+    var tx = function (o, k) { return opt.lang === 'en' ? (o[k + 'En'] || o[k] || '') : (o[k] || ''); };
+    if (opt.detail === 'lines') (s.lines || []).forEach(function (l) {
+      var k = l.fee !== false ? feeK : 1;
+      lines.push({ id: uid('l'), name: tx(l, 'name'), desc: l.calc || '', unit: l.unit || 'kom', qty: r5((Number(l.qty) || 0) * share), mode: 'net', price: r5((Number(l.price) || 0) * k), priceGross: 0, rate: 21, disc: 0 });
+    });
+    else { var base = (s.lines || []).reduce(function (n, l) { return n + r2((Number(l.qty) || 0) * (Number(l.price) || 0)) * (l.fee !== false ? feeK : 1); }, 0);
+      if (base) lines.push({ id: uid('l'), name: tx(s, 'title') || (si + 1) + '.', desc: '', unit: 'kom', qty: 1, mode: 'net', price: r5(base * share), priceGross: 0, rate: 21, disc: 0 }); }
+  });
+  if (opt.fee !== 'included' && t.fee) lines.push({ id: uid('l'), name: (opt.lang === 'en' ? 'Agency fee ' : 'Agencijska provizija ') + ce.fee + '%', desc: '', unit: 'kom', qty: 1, mode: 'net', price: r5(t.fee * share), priceGross: 0, rate: 21, disc: 0 });
+  if (lines.length) lines[0].desc = (lines[0].desc ? lines[0].desc + '\n' : '') + ref + (share < 1 ? (opt.lang === 'en' ? ' · ' : ' · ') + Math.round(share * 100) + '%' : '');
+  var inv = invBlank();
+  return Object.assign(inv, { type: opt.advance ? 'advance' : 'invoice', lang: opt.lang, clientId: ce.clientId || '', buyer: ce.clientId ? buyerFromClient(ce.clientId) : {}, lines: lines, ceId: ce.id, projectId: ce.projectId || '', title: ce.title || '' });
+}
+
+// ---------- PDF in the layout of DAA's current invoices
+async function invMakePdf(inv) {
+  var PL = window.PDFLib, L = INV_L[inv.lang === 'en' ? 'en' : 'me'], c = company(), b = invBuyer(inv), tot = invTotals(inv), vp = inv.vatPayer !== false;
+  var doc = await PL.PDFDocument.create(); doc.registerFontkit(window.fontkit);
+  var reg = await doc.embedFont(await getBytes(ASSET.fontR), { subset: true }), bold = await doc.embedFont(await getBytes(ASSET.fontB), { subset: true });
+  var logo = await doc.embedPng(await getBytes(ASSET.logo));
+  var W = 595.28, H = 841.89, M = 40, ink = PL.rgb(0.07, 0.07, 0.07), grey = PL.rgb(0.38, 0.38, 0.38), line = PL.rgb(0.85, 0.85, 0.83), band = PL.rgb(0.965, 0.965, 0.96), red = PL.rgb(0.7, 0.14, 0.09);
+  var page = doc.addPage([W, H]), y;
+  var t = function (s, x, yy, sz, f, col) { page.drawText(String(s == null ? '' : s), { x: x, y: yy, size: sz, font: f || reg, color: col || ink }); };
+  var rt = function (s, x, yy, sz, f, col) { s = String(s == null ? '' : s); t(s, x - (f || reg).widthOfTextAtSize(s, sz), yy, sz, f, col); };
+  var wrap = function (text, f, sz, w) { var out = []; String(text || '').split('\n').forEach(function (p) { var cur = ''; p.split(' ').forEach(function (wd) { var tt = cur ? cur + ' ' + wd : wd; if (f.widthOfTextAtSize(tt, sz) > w && cur) { out.push(cur); cur = wd; } else cur = tt; }); out.push(cur); }); return out; };
+  var money = function (n) { return fmt(n) + '€'; };
+  // header: logo, company, ids
+  page.drawImage(logo, { x: M, y: H - M - 98, width: 75, height: 98 });
+  [c.name, c.address, c.town + ', ' + c.country, c.phone, c.email, c.web].forEach(function (s, i) { t(s, 175, H - M - 10 - i * 12, 8.5); });
+  [['PIB', c.pib], ['PDV', c.pdv], ['IBAN', c.iban], ['BIC/SWIFT', c.bic], ['', c.accounts]].forEach(function (r, i) { t(r[0], 380, H - M - 10 - i * 12, 8.5); rt(r[1], W - M, H - M - 10 - i * 12, 8.5); });
+  // title block
+  y = H - M - 140;
+  var title = (inv.type === 'advance' ? L.adv : L.inv) + ': ' + (inv.status === 'draft' ? '—' : invNo(inv));
+  t(title, M, y, 16, bold); if (inv.status === 'draft') t(L.draft, M, y - 16, 9, bold, red);
+  t(L.place + ', ' + isoToDate(inv.issueDate) + '. / ' + L.due + ': ' + isoToDate(inv.dueDate) + '.', M, y - 32, 8.5);
+  // buyer box
+  page.drawRectangle({ x: 330, y: y - 120, width: W - M - 330, height: 135, borderColor: ink, borderWidth: 0.8 });
+  wrap(b.name || '—', bold, 12, W - M - 345).slice(0, 2).forEach(function (s, i) { t(s, 340, y - 6 - i * 15, 12, bold); });
+  [[L.pib, b.pib], [L.pdv, b.pdv], [L.adr, [b.address, b.town].filter(Boolean).join(', ')], [L.country, b.country]].forEach(function (r, i) { t(r[0] + ':', 340, y - 46 - i * 17, 8.5, reg, grey); rt(r[1] || '—', W - M - 10, y - 46 - i * 17, 8.5); });
+  // fiscal block (QR + codes) once fiscalized
+  var fy = y - 52, f = inv.fiscal || {};
+  if (inv.status !== 'draft' && f.qrUrl && window.qrcode) {
+    var qr = window.qrcode(0, 'M'); qr.addData(f.qrUrl); qr.make(); var n = qr.getModuleCount(), cs = 70 / n;
+    for (var r = 0; r < n; r++) for (var k = 0; k < n; k++) if (qr.isDark(r, k)) page.drawRectangle({ x: M + k * cs, y: fy - 70 + (n - 1 - r) * cs, width: cs, height: cs, color: ink });
+  }
+  [['JIKR', f.jikr || '—'], ['IKOF', f.ikof || '—'], [L.no, inv.status === 'draft' ? '—' : c.fiscal.bu + '/' + inv.ordNum + '/' + inv.year + '/' + c.fiscal.enu], [L.date, f.at || '—'], [L.type, L.noncash + ' / ' + (inv.payMethod || 'ACCOUNT')]].forEach(function (r2_, i) { t(r2_[0], M + 82, fy - i * 13, 7.5, reg, grey); t(r2_[1], M + 112, fy - i * 13, 7.5); });
+  // lines
+  y = y - 150;
+  var cols = [[L.desc, M + 6, 'l'], [L.qty, 300, 'r'], [L.net, 355, 'r'], [L.gross, 405, 'r'], [L.disc, 440, 'r'], [L.tnet, 497, 'r'], [L.tgross, W - M - 4, 'r']];
+  page.drawRectangle({ x: M, y: y - 7, width: W - 2 * M, height: 20, color: band });
+  cols.forEach(function (cl) { (cl[2] === 'r' ? rt : t)(cl[0].toUpperCase(), cl[1], y, 6.5, bold, grey); });
+  y -= 24;
+  (inv.lines || []).forEach(function (l) {
+    var tl = invLine(l, vp), dl = wrap(l.desc || '', reg, 7.5, 230);
+    if (y - 14 - dl.length * 10 < 200) { page = doc.addPage([W, H]); y = H - M - 20; }
+    t(wrap(l.name || '', bold, 9, 240)[0], M + 6, y, 9, bold);
+    rt(String(l.qty).replace('.', ',') + ' ' + ceUnitText(l.unit, Number(l.qty) || 0, inv.lang === 'en' ? 'en' : 'me'), 300, y, 8.5);
+    rt(String(tl.unitNet).replace('.', ','), 355, y, 8.5); rt(fmt(tl.unitGross), 405, y, 8.5); rt(l.disc ? String(l.disc).replace('.', ',') : '/', 440, y, 8.5);
+    rt(money(tl.net), 497, y, 8.5); rt(money(tl.gross), W - M - 4, y, 8.5);
+    dl.forEach(function (s, i) { t(s, M + 6, y - 12 - i * 10, 7.5, reg, grey); });
+    y -= 18 + dl.length * 10;
+    page.drawLine({ start: { x: M, y: y + 6 }, end: { x: W - M, y: y + 6 }, thickness: 0.5, color: line });
+  });
+  // VAT breakdown + totals
+  y -= 14;
+  page.drawRectangle({ x: M, y: y - 7, width: 300, height: 18, color: band });
+  t(L.rate.toUpperCase(), M + 8, y, 6.5, bold, grey); rt(L.base.toUpperCase(), M + 210, y, 6.5, bold, grey); rt(L.vat.toUpperCase(), M + 292, y, 6.5, bold, grey);
+  var ty = y; y -= 22;
+  tot.rates.forEach(function (rr) { t(rr.rate + '%', M + 8, y, 8.5); rt(money(rr.base), M + 210, y, 8.5); rt(money(rr.vat), M + 292, y, 8.5); y -= 16; });
+  if (!vp) { t(L.notVat, M + 8, y, 8, reg, grey); y -= 14; }
+  t(L.sNet, 380, ty, 9); rt(money(tot.net), W - M - 4, ty, 9, bold);
+  t(L.sVat, 380, ty - 16, 9); rt(money(tot.vat), W - M - 4, ty - 16, 9, bold);
+  t(L.sTot, 380, ty - 34, 10, bold); rt(money(tot.gross), W - M - 4, ty - 34, 11, bold);
+  y = Math.min(y, ty - 50) - 10;
+  if (inv.note) { t(L.note + ':', M, y, 8.5, bold); wrap(inv.note, reg, 8.5, W - 2 * M).forEach(function (s, i) { t(s, M, y - 12 - i * 11, 8.5); }); y -= 20 + wrap(inv.note, reg, 8.5, W - 2 * M).length * 11; }
+  // signatures + software line
+  y = Math.min(y, 140);
+  var op = operatorOf(inv.issuedBy || inv.by);
+  t(L.issued + ': ' + userName(inv.issuedBy || inv.by) + (op ? ' / ' + op : ''), M, y, 8.5); t(L.received + ':', 330, y, 8.5);
+  page.drawLine({ start: { x: M, y: y - 34 }, end: { x: 270, y: y - 34 }, thickness: 0.8, color: ink }); page.drawLine({ start: { x: 330, y: y - 34 }, end: { x: W - M, y: y - 34 }, thickness: 0.8, color: ink });
+  t('DAA Pay – DAA Montenegro d.o.o. / ' + c.fiscal.sw, M, y - 56, 7, reg, grey);
+  return doc.save();
+}
+function invFile(inv) { var b = invBuyer(inv); return ((inv.type === 'advance' ? 'Avansni racun ' : 'Racun ') + (inv.status === 'draft' ? 'NACRT' : inv.ordNum + '-' + inv.year) + ' - ' + (b.name || '')).replace(/[čćšžđČĆŠŽĐ]/g, function (x) { return { č: 'c', ć: 'c', š: 's', ž: 'z', đ: 'dj', Č: 'C', Ć: 'C', Š: 'S', Ž: 'Z', Đ: 'Dj' }[x]; }).replace(/[^\x20-\x7E]/g, '').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 110) + '.pdf'; }
+
+// ---------- screens
+function Invoices() {
+  if (!invAllowed()) return html`<main class="page wrap gut"><div class="card empty">Outgoing invoices are for the CEO, Super-admin, office manager and account managers.</div></main>`;
+  if (G.ui.inv) return html`<${InvEditor} key=${G.ui.inv} />`;
+  var sub = G.ui.invView || 'list';
+  return html`<main class="page wrap gut">
+    <section class="card pad row" style="justify-content: space-between; gap: 12px" aria-label="Invoices">
+      <div style="min-width: 0"><h2 style="font-size: 17px">Invoices</h2><div class="muted" style="font-size: 13px">Outgoing non-cash invoices to clients, in Montenegrin or English. ${company().fiscal.enabled ? 'Fiscalized with the Tax Administration when issued.' : 'Fiscalization is being verified: invoices are saved as drafts for now.'}</div></div>
+      <div class="row">
+        ${isTop(G.me.role) && html`<div class="row" role="tablist">${[['list', 'Invoices'], ['settings', 'Settings']].map(function (x) { return html`<button key=${x[0]} role="tab" aria-selected=${sub === x[0]} class=${'chip' + (sub === x[0] ? ' on' : '')} onClick=${function () { setUi({ invView: x[0] }); }}>${x[1]}</button>`; })}</div>`}
+        ${sub === 'list' && html`<button class="btn" onClick=${function () { G.ui.invCopy = null; setUi({ inv: 'new' }); }}>${I.plus} New invoice</button>`}
+      </div>
+    </section>
+    ${sub === 'settings' && isTop(G.me.role) ? html`<${InvSettings} />` : html`<${InvList} />`}
+  </main>`;
+}
+function invDebt(clientId, exceptId) { return r2(G.data.invoices.filter(function (i) { return i.id !== exceptId && i.clientId === clientId && i.status !== 'draft' && i.pay !== 'paid' && i.pay !== 'uncollectable'; }).reduce(function (n, i) { return n + invTotals(i).gross - (i.pay === 'partial' ? Number(i.paidAmount) || 0 : 0); }, 0)); }
+function InvList() {
+  var narrow = useNarrow(), fs = useState({ q: '', st: 'all' }), f = fs[0], setF = fs[1];
+  var list = G.data.invoices.filter(function (i) {
+    if (f.st === 'draft' && i.status !== 'draft') return false;
+    if (PAY_STATUS[f.st] && (i.status === 'draft' || (i.pay || 'unpaid') !== f.st)) return false;
+    var tq = fold(f.q).trim(); return !tq || fold([invNo(i), invBuyer(i).name, invBuyer(i).pib, i.title, (i.lines || []).map(function (l) { return l.name; }).join(' '), fmt(invTotals(i).gross)].join(' ')).indexOf(tq) >= 0;
+  }).sort(function (a, b) { return (b.issueDate || '').localeCompare(a.issueDate || '') || (b.ts || 0) - (a.ts || 0); });
+  var open = function (i) { setUi({ inv: i.id }); };
+  var stBadge = function (i) { return i.status === 'draft' ? html`<span class="badge s1">Draft</span>` : html`<span class=${'badge ' + PAY_STATUS[i.pay || 'unpaid'][2]}>${PAY_STATUS[i.pay || 'unpaid'][1]}</span>`; };
+  return html`<section class="card pad grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))" aria-label="Filters">
+      <${Field} label="Search"><input id="iv-q" class="inp" type="search" placeholder="Number, client, PIB, service, amount" value=${f.q} onInput=${inputOn(f, setF, 'q')} /><//>
+      <${Field} label="Status"><select id="iv-st" class="inp" value=${f.st} onChange=${inputOn(f, setF, 'st')}><option value="all">All</option><option value="draft">Drafts</option>${Object.keys(PAY_STATUS).map(function (k) { return html`<option value=${k}>${PAY_STATUS[k][1]}</option>`; })}</select><//>
+    </section>
+    ${!list.length ? html`<div class="card empty">${G.data.invoices.length ? 'No invoice matches.' : 'No invoices yet. Start with New invoice, or open an approved cost estimate and choose Create invoice.'}</div>`
+      : narrow ? html`<section class="mlist">${list.map(function (i) { var t = invTotals(i); return html`<article key=${i.id} class="mcard"><button class="namebtn" style="all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 2px" onClick=${function () { open(i); }}><span class="mono" style="font-size: 12px">${invNo(i)}</span><b>${invBuyer(i).name || '(no client)'}</b><span class="muted" style="font-size: 13px">${i.title || (i.lines[0] || {}).name || ''}</span></button><div class="mcf">${stBadge(i)}<span>${isoToDate(i.issueDate)}</span><span class="amt num">${fmt(t.gross)} €</span></div></article>`; })}</section>`
+      : html`<section class="card" style="overflow-x: auto"><table class="t"><thead><tr><th style="padding: 10px 16px">Number</th><th>Client</th><th>Issued</th><th>Due</th><th>Status</th><th class="r">Excl. VAT</th><th class="r" style="padding-right: 16px">Total</th></tr></thead>
+        <tbody>${list.map(function (i) { var t = invTotals(i), late = i.status !== 'draft' && i.pay !== 'paid' && i.pay !== 'uncollectable' && i.dueDate && i.dueDate < todayIso(); return html`<tr key=${i.id} style="cursor: pointer" onClick=${function () { open(i); }}>
+          <td class="mono" style="padding-left: 16px; white-space: nowrap">${invNo(i)}${i.type === 'advance' ? html`<div class="muted" style="font-size: 11px; font-family: var(--sans)">Advance</div>` : ''}</td>
+          <td><button class="link" style="text-align: left" onClick=${function (e) { e.stopPropagation(); open(i); }}>${invBuyer(i).name || '(no client)'}</button><div class="muted" style="font-size: 12px">${i.title || ''}</div></td>
+          <td class="num" style="white-space: nowrap">${isoToDate(i.issueDate)}</td><td class="num" style=${'white-space: nowrap' + (late ? '; color: var(--danger); font-weight: 600' : '')}>${isoToDate(i.dueDate)}</td><td>${stBadge(i)}</td>
+          <td class="r num" style="white-space: nowrap">${fmt(t.net)} €</td><td class="r num" style="padding-right: 16px; font-weight: 600; white-space: nowrap">${fmt(t.gross)} €</td></tr>`; })}</tbody></table></section>`}`;
+}
+function InvEditor() {
+  var isNew = G.ui.inv === 'new', src = isNew ? (G.ui.invCopy || invBlank()) : byId(G.data.invoices, G.ui.inv);
+  var ss = useState(function () { return src ? JSON.parse(JSON.stringify(src)) : null; }), inv = ss[0], setInv = ss[1];
+  var ds = useState(isNew && !!G.ui.invCopy), dirty = ds[0], setDirty = ds[1], es = useState(''), err = es[0], setErr = es[1], bs = useState(false), busy = bs[0], setBusy = bs[1];
+  var ps = useState(null), payEd = ps[0], setPayEd = ps[1];
+  useEffect(function () { try { window.scrollTo(0, 0); } catch (e) {} }, []);
+  if (!inv) return html`<main class="page wrap gut"><div class="card empty">This invoice no longer exists. <button class="link" onClick=${function () { setUi({ inv: null }); }}>Back to invoices</button></div></main>`;
+  var draft = inv.status === 'draft' || !inv.status, tot = invTotals(inv), c = company(), vp = inv.vatPayer !== false;
+  var upd = function (p) { setInv(Object.assign({}, inv, p)); setDirty(true); setErr(''); };
+  var updLine = function (i, p) { var ls = inv.lines.slice(); ls[i] = Object.assign({}, ls[i], p); upd({ lines: ls }); };
+  var clients = G.data.clients.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+  async function save() {
+    if (!inv.clientId) { setErr('Choose the client (buyer).'); return false; }
+    if (!inv.lines.length || !inv.lines.some(function (l) { return (l.name || '').trim() && invLine(l, vp).gross; })) { setErr('Add at least one line with a name and an amount.'); return false; }
+    var b = inv.buyer || {}; if (!b.pib) { setErr('The client has no PIB. Add it under Partners (or pick the client again after adding it).'); return false; }
+    setBusy(true);
+    var id = inv.id || uid('iv'), data = Object.assign({}, inv); delete data.id;
+    data.lines = data.lines.map(function (l) { var o = Object.assign({}, l); delete o.qT; delete o.pT; delete o.gT; delete o.dT; return o; });
+    data.updatedBy = G.me.id; data.updatedAt = stamp(); data.status = 'draft';
+    var ok = await put('invoices', id, data); setBusy(false);
+    if (!ok) return false;
+    logEv('data', (inv.id ? 'Updated' : 'Created') + ' invoice draft for ' + (b.name || '') + ' (' + fmt(tot.gross) + ' EUR)');
+    setDirty(false); toast('Draft saved.');
+    if (!inv.id) { G.ui.invCopy = null; setUi({ inv: id }); }
+    return true;
+  }
+  async function pdf() { if (draft && dirty && !(await save())) return; setBusy(true); try { await saveFile(invFile(inv), await invMakePdf(inv)); } catch (e) { toast('Could not create the PDF: ' + (e.message || e), true); } setBusy(false); }
+  async function remove() { if (!confirm('Delete this draft?')) return; if (await del('invoices', inv.id)) { toast('Draft deleted.'); setUi({ inv: null }); } }
+  function back() { if (dirty && !confirm('Leave without saving?')) return; G.ui.invCopy = null; setUi({ inv: null }); }
+  async function savePay() {
+    var p = { pay: payEd.pay, payAt: stamp(), payBy: G.me.id };
+    if (payEd.pay === 'partial') { var a = parseNum(payEd.amt); if (isNaN(a) || a <= 0 || a >= tot.gross) { toast('Enter the amount paid so far (less than the total).', true); return; } p.paidAmount = a; }
+    if (await patch('invoices', inv.id, p)) { setInv(Object.assign({}, inv, p)); setPayEd(null); toast('Payment status saved.'); logEv('payment', 'Invoice ' + invNo(inv) + ' (' + (inv.buyer || {}).name + '): ' + PAY_STATUS[p.pay][1]); }
+  }
+  var ce = inv.ceId && byId(G.data.ces, inv.ceId), debt = inv.clientId ? invDebt(inv.clientId, inv.id) : 0;
+  var num = function (l, k, t) { return l[t] != null ? l[t] : numIn(l[k]); };
+  return html`<main class="page wrap gut ce-ed">
+    <section class="card pad row ce-bar" style="justify-content: space-between; gap: 12px">
+      <div class="row" style="gap: 10px; min-width: 0"><button class="icon" aria-label="Back to invoices" onClick=${back}>‹</button>
+        <div style="min-width: 0"><div class="mono" style="font-size: 13px">${draft ? 'Draft' : c.fiscal.bu + '/' + inv.ordNum + '/' + inv.year + '/' + c.fiscal.enu}${dirty ? html` <span class="badge s1">Not saved</span>` : ''}</div><h2 style="font-size: 18px">${(inv.type === 'advance' ? 'Advance invoice' : 'Invoice') + (draft ? '' : ' ' + invNo(inv))}${(inv.buyer || {}).name ? ' · ' + inv.buyer.name : ''}</h2></div></div>
+      <div class="row">
+        ${draft && html`<button class="btn" disabled=${busy} onClick=${save}>${busy ? 'Working…' : 'Save as draft'}</button>`}
+        ${draft && invCanIssue() && html`<button class="btn o" disabled=${true} title="Fiscalization is being verified and is switched off for now.">Save and fiscalize</button>`}
+        <button class="btn o sm" disabled=${busy} onClick=${pdf}>${I.dl} PDF</button>
+      </div>
+    </section>
+    ${err && html`<div class="alert e" role="alert">${err}</div>`}
+    ${draft && !c.fiscal.enabled && html`<div class="alert i" style="font-size: 13px">Fiscalization is switched off while it is being verified with DAA's certificate. Drafts can be prepared, checked and downloaded (marked NACRT); they get their number, IKOF, JIKR and QR code when fiscalized.</div>`}
+
+    <section class="card pad stack" aria-label="New invoice">
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+        <${Field} label="Client (buyer)" req><select id="iv-client" class="inp" disabled=${!draft} value=${inv.clientId} onChange=${function (e) { upd({ clientId: e.target.value, buyer: e.target.value ? buyerFromClient(e.target.value) : {} }); }}><option value="">Choose…</option>${clients.map(function (cl) { return html`<option value=${cl.id}>${cl.name}</option>`; })}</select><//>
+        <${Field} label="Invoice type"><select id="iv-type" class="inp" disabled=${!draft} value=${inv.type} onChange=${function (e) { upd({ type: e.target.value }); }}>${Object.keys(INV_TYPES).map(function (k) { return html`<option value=${k}>${INV_TYPES[k][0]} / ${INV_TYPES[k][1]}</option>`; })}</select><//>
+        <${Field} label="Issue date"><input id="iv-date" class="inp" type="date" disabled=${!draft} value=${inv.issueDate} onInput=${function (e) { upd({ issueDate: e.target.value }); }} /><//>
+        <${Field} label="Payment due"><input id="iv-due" class="inp" type="date" disabled=${!draft} value=${inv.dueDate} onInput=${function (e) { upd({ dueDate: e.target.value }); }} /><//>
+        <${Field} label="DAA in the PDV system"><select id="iv-vp" class="inp" disabled=${!draft} value=${vp ? '1' : '0'} onChange=${function (e) { upd({ vatPayer: e.target.value === '1' }); }}><option value="1">Yes</option><option value="0">No</option></select><//>
+        <${Field} label="Payment method"><select id="iv-pm" class="inp" disabled=${!draft} value=${inv.payMethod} onChange=${function (e) { upd({ payMethod: e.target.value }); }}>${Object.keys(PAY_METHODS).map(function (k) { return html`<option value=${k}>${PAY_METHODS[k]}</option>`; })}</select><//>
+        <${Field} label="Language"><select id="iv-lang" class="inp" disabled=${!draft} value=${inv.lang} onChange=${function (e) { upd({ lang: e.target.value }); }}><option value="me">Montenegrin</option><option value="en">English</option></select><//>
+        ${ce && html`<div class="fld"><span>From cost estimate</span><button class="link" style="text-align: left; min-height: 44px" onClick=${function () { if (!dirty || confirm('Leave without saving?')) setUi({ tab: 'ce', ce: ce.id, inv: null }); }}>${ceNumber(ce)} · ${ce.title}</button></div>`}
+      </div>
+      ${inv.clientId && html`<div class="muted" style="font-size: 13px">${[(inv.buyer || {}).pib ? 'PIB ' + inv.buyer.pib : 'No PIB — add it under Partners', (inv.buyer || {}).pdv, [(inv.buyer || {}).address, (inv.buyer || {}).town].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}${debt ? html` · <b style="color: var(--danger)">Client owes ${fmt(debt)} € on other invoices</b>` : ''}</div>`}
+    </section>
+
+    <section class="card" aria-label="Lines">
+      <div class="pad row" style="justify-content: space-between; background: var(--bg); border-bottom: 1px solid var(--line-2); border-radius: 12px 12px 0 0"><b>Lines</b><span class="muted" style="font-size: 12px">Enter the price without or with PDV; the other is calculated.</span></div>
+      ${inv.lines.map(function (l, i) { var t = invLine(l, vp); return html`<div key=${l.id} class="iv-line">
+        <div class="stack" style="gap: 6px; min-width: 0">
+          <input class="inp" aria-label="Service or goods" placeholder="Service, e.g. Usluge AV produkcije" disabled=${!draft} value=${l.name} onInput=${function (e) { updLine(i, { name: e.target.value }); }} />
+          <textarea class="inp" rows="2" aria-label="Description" placeholder="Description (optional)" disabled=${!draft} value=${l.desc} onInput=${function (e) { updLine(i, { desc: e.target.value }); }}></textarea>
+        </div>
+        <label><span class="ce-lab">Price excl. PDV</span><input class=${'inp num' + (l.mode === 'net' ? '' : ' muted')} inputmode="decimal" aria-label="Unit price without PDV" disabled=${!draft} value=${l.mode === 'net' ? num(l, 'price', 'pT') : numIn(t.unitNet)} onInput=${function (e) { var n = parseNum(e.target.value); updLine(i, { mode: 'net', pT: e.target.value, price: isNaN(n) ? 0 : n }); }} /></label>
+        <label><span class="ce-lab">Price incl. PDV</span><input class=${'inp num' + (l.mode === 'gross' ? '' : ' muted')} inputmode="decimal" aria-label="Unit price with PDV" disabled=${!draft || !vp} value=${l.mode === 'gross' ? num(l, 'priceGross', 'gT') : numIn(t.unitGross)} onInput=${function (e) { var n = parseNum(e.target.value); updLine(i, { mode: 'gross', gT: e.target.value, priceGross: isNaN(n) ? 0 : n }); }} /></label>
+        <label><span class="ce-lab">Qty</span><input class="inp num" inputmode="decimal" aria-label="Quantity" disabled=${!draft} value=${num(l, 'qty', 'qT')} onInput=${function (e) { var n = parseNum(e.target.value); updLine(i, { qT: e.target.value, qty: isNaN(n) ? 0 : n }); }} /></label>
+        <label><span class="ce-lab">Unit</span><select class="inp" aria-label="Unit" disabled=${!draft} value=${l.unit} onChange=${function (e) { updLine(i, { unit: e.target.value }); }}>${CE_UNITS.map(function (u) { return html`<option value=${u[0]}>${u[1]}</option>`; })}</select></label>
+        <label><span class="ce-lab">PDV</span><select class="inp" aria-label="PDV rate" disabled=${!draft || !vp} value=${String(vp ? l.rate : 0)} onChange=${function (e) { updLine(i, { rate: Number(e.target.value) }); }}>${[21, 15, 7, 0].map(function (r) { return html`<option value=${String(r)}>${r}%</option>`; })}</select></label>
+        <label><span class="ce-lab">Disc. %</span><input class="inp num" inputmode="decimal" aria-label="Discount %" disabled=${!draft} value=${num(l, 'disc', 'dT')} onInput=${function (e) { var n = parseNum(e.target.value); updLine(i, { dT: e.target.value, disc: isNaN(n) ? 0 : Math.min(100, Math.max(0, n)) }); }} /></label>
+        <div class="num r" style="align-self: center"><span class="ce-lab">Total</span><b>${fmt(t.gross)} €</b><div class="muted" style="font-size: 11px">${fmt(t.net)} + ${fmt(t.vat)}</div></div>
+        ${draft && html`<button class="icon" aria-label="Remove line" style="align-self: center" onClick=${function () { upd({ lines: inv.lines.filter(function (x, j) { return j !== i; }) }); }}>${I.x}</button>`}
+      </div>`; })}
+      ${draft && html`<div class="pad row"><button class="btn q sm" onClick=${function () { upd({ lines: inv.lines.concat([{ id: uid('l'), name: '', desc: '', unit: 'kom', qty: 1, mode: 'net', price: 0, priceGross: 0, rate: 21, disc: 0 }]) }); }}>${I.plus} Add line</button>
+        <select class="inp sm" style="width: auto" aria-label="Add from price list" value="" onChange=${function (e) { var sv = byId(G.data.svc, e.target.value); if (sv) upd({ lines: inv.lines.concat([{ id: uid('l'), name: inv.lang === 'en' ? (sv.nameEn || sv.name) : sv.name, desc: '', unit: sv.unit, qty: 1, mode: 'net', price: sv.price, priceGross: 0, rate: 21, disc: 0 }]) }); e.target.value = ''; }}><option value="">+ From price list…</option>${G.data.svc.filter(function (sv) { return sv.active !== false; }).map(function (sv) { return html`<option value=${sv.id}>${sv.code ? sv.code + ' · ' : ''}${sv.name}</option>`; })}</select></div>`}
+    </section>
+
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start">
+      <section class="card pad stack" aria-label="PDV" style="gap: 8px"><b>PDV by rate</b>
+        ${tot.rates.map(function (r) { return html`<div key=${r.rate} class="row ce-tl"><span>${r.rate}% · base ${fmt(r.base)} €</span><b class="num">${fmt(r.vat)} €</b></div>`; })}
+        <${Field} label="Note"><textarea id="iv-note" class="inp" rows="3" disabled=${!draft} value=${inv.note} onInput=${function (e) { upd({ note: e.target.value }); }}></textarea><//>
+      </section>
+      <section class="card pad stack" aria-label="Totals" style="gap: 8px">
+        <div class="row ce-tl"><span>Excl. PDV</span><b class="num">${fmt(tot.net)} €</b></div>
+        <div class="row ce-tl"><span>PDV</span><b class="num">${fmt(tot.vat)} €</b></div>
+        <div class="row ce-tl" style="border-top: 1.5px solid var(--ink); padding-top: 8px; font-size: 17px"><b>Total</b><b class="num">${fmt(tot.gross)} €</b></div>
+        ${ce && html`<div class="muted" style="font-size: 12px">Estimate ${ceNumber(ce)} NET ${fmt(ceTotals(ce).net)} €; this invoice ${fmt(tot.net)} € (${Math.round(tot.net / (ceTotals(ce).net || 1) * 100)}%).</div>`}
+      </section>
+    </div>
+
+    ${!draft && html`<section class="card pad stack" aria-label="Payment status" style="gap: 10px">
+      <div class="row" style="justify-content: space-between"><b>Payment status</b><span class=${'badge ' + PAY_STATUS[inv.pay || 'unpaid'][2]}>${PAY_STATUS[inv.pay || 'unpaid'][1]}${inv.pay === 'partial' ? ' · ' + fmt(inv.paidAmount) + ' €' : ''}</span></div>
+      ${invCanIssue() && (payEd ? html`<div class="row">${Object.keys(PAY_STATUS).map(function (k) { return html`<label key=${k} class=${'seg' + (payEd.pay === k ? ' on' : '')}><input type="radio" name="pay" checked=${payEd.pay === k} onChange=${function () { setPayEd(Object.assign({}, payEd, { pay: k })); }} /> ${PAY_STATUS[k][1]}</label>`; })}</div>
+        ${payEd.pay === 'partial' && html`<${Field} label="Paid so far (EUR)"><input class="inp num" inputmode="decimal" style="max-width: 200px" value=${payEd.amt} onInput=${function (e) { setPayEd(Object.assign({}, payEd, { amt: e.target.value })); }} /><//>`}
+        <div class="row"><button class="btn sm" onClick=${savePay}>Save</button><button class="btn q sm" onClick=${function () { setPayEd(null); }}>Cancel</button></div>`
+        : html`<button class="btn q sm" style="align-self: flex-start" onClick=${function () { setPayEd({ pay: inv.pay || 'unpaid', amt: numIn(inv.paidAmount || '') }); }}>Change payment status</button>`)}
+    </section>`}
+    <div class="row" style="justify-content: space-between">
+      <div class="muted" style="font-size: 12px">${inv.id ? 'Prepared by ' + userName(inv.by) + (inv.updatedAt ? ' · last saved ' + inv.updatedAt + ' by ' + userName(inv.updatedBy) : '') : 'Not saved yet'}</div>
+      ${inv.id && draft && (inv.by === G.me.id || isTop(G.me.role)) && html`<button class="btn q sm" onClick=${remove}>${I.trash} Delete draft</button>`}
+    </div>
+  </main>`;
+}
+// Estimate → invoice: options dialog, opened from the estimate editor.
+function CeToInvoice(p) {
+  var ce = p.ce, t = ceTotals(ce), already = G.data.invoices.filter(function (i) { return i.ceId === ce.id; }).reduce(function (n, i) { return n + invTotals(i).net; }, 0);
+  var s = useState({ share: '100', detail: 'sections', fee: 'included', lang: ce.en ? 'me' : 'me', advance: false }), o = s[0], set = s[1];
+  function go() { var sh = parseNum(o.share); if (isNaN(sh) || sh <= 0 || sh > 100) { toast('Enter a share between 1 and 100%.', true); return; } G.ui.invCopy = invFromCe(ce, Object.assign({}, o, { share: sh })); setUi({ tab: 'inv', inv: 'new', ce: null }); }
+  return html`<div class="modal-wrap" onClick=${function (e) { if (e.target === e.currentTarget) p.onClose(); }}><div class="modal" style="max-width: 560px" role="dialog" aria-modal="true" aria-labelledby="ci-title">
+    <div class="mhead"><div style="flex-grow: 1"><h2 id="ci-title" style="font-size: 20px">Create invoice</h2><div class="muted" style="font-size: 13px">From ${ceNumber(ce)} · NET ${fmt(t.net)} €${already ? ' · already invoiced ' + fmt(already) + ' € (' + Math.round(already / (t.net || 1) * 100) + '%)' : ''}</div></div><button class="icon" aria-label="Close" onClick=${p.onClose}>${I.x}</button></div>
+    <div class="mbody">
+      <${Field} label="How much of the estimate" hint="100% for the whole estimate, e.g. 50 for an advance"><input id="ci-share" class="inp num" inputmode="decimal" style="max-width: 140px" value=${o.share} onInput=${function (e) { set(Object.assign({}, o, { share: e.target.value })); }} /><//>
+      <label class="row" style="gap: 8px"><input type="checkbox" checked=${o.advance} onChange=${function (e) { set(Object.assign({}, o, { advance: e.target.checked })); }} /> Advance invoice (avansni račun)</label>
+      <fieldset class="stack" style="border: 0; margin: 0; padding: 0; gap: 6px"><legend style="font-size: 13px; font-weight: 500; margin-bottom: 6px">Lines</legend>
+        ${[['sections', 'One line per section (e.g. Usluge AV produkcije)'], ['lines', 'Every service as its own line']].map(function (x) { return html`<label key=${x[0]} class="row" style="gap: 8px"><input type="radio" name="ci-d" checked=${o.detail === x[0]} onChange=${function () { set(Object.assign({}, o, { detail: x[0] })); }} /> ${x[1]}</label>`; })}</fieldset>
+      ${t.fee > 0 && html`<fieldset class="stack" style="border: 0; margin: 0; padding: 0; gap: 6px"><legend style="font-size: 13px; font-weight: 500; margin-bottom: 6px">Agency fee ${ce.fee}%</legend>
+        ${[['included', 'Included in the prices'], ['line', 'As its own line']].map(function (x) { return html`<label key=${x[0]} class="row" style="gap: 8px"><input type="radio" name="ci-f" checked=${o.fee === x[0]} onChange=${function () { set(Object.assign({}, o, { fee: x[0] })); }} /> ${x[1]}</label>`; })}</fieldset>`}
+      <${Field} label="Language"><select class="inp" style="max-width: 220px" value=${o.lang} onChange=${function (e) { set(Object.assign({}, o, { lang: e.target.value })); }}><option value="me">Montenegrin</option><option value="en">English</option></select><//>
+      <div class="muted" style="font-size: 12px">The invoice opens as a draft with PDV 21% on every line; check it before saving.</div>
+      <div class="row" style="justify-content: flex-end"><button class="btn q" onClick=${p.onClose}>Cancel</button><button class="btn" onClick=${go}>Create invoice draft</button></div>
+    </div></div></div>`;
+}
+function InvSettings() {
+  var c = company(), ss = useState(function () { return JSON.parse(JSON.stringify(c)); }), f = ss[0], set = ss[1];
+  var up = function (k) { return function (e) { var o = Object.assign({}, f); o[k] = e.target.value; set(o); }; };
+  var upF = function (k) { return function (e) { var o = Object.assign({}, f); o.fiscal = Object.assign({}, f.fiscal); o.fiscal[k] = e.target.value.trim(); set(o); }; };
+  var issuers = G.data.users.filter(function (u) { return u.active !== false && (isTop(u.role) || u.role === 'om'); });
+  async function save() { var d = JSON.parse(JSON.stringify(f)); d.fiscal.enabled = !!c.fiscal.enabled; d.dueDays = parseInt(d.dueDays, 10) || 30; if (await put('settings', 'company', d)) { toast('Settings saved.'); logEv('data', 'Changed company and fiscal settings'); } }
+  return html`<section class="card pad stack" aria-label="Company"><b>Company details on invoices</b>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+        ${[['name', 'Name'], ['address', 'Address'], ['town', 'Town'], ['country', 'Country'], ['phone', 'Phone'], ['email', 'Email'], ['web', 'Web'], ['pib', 'PIB'], ['pdv', 'PDV number'], ['iban', 'IBAN'], ['bic', 'BIC/SWIFT'], ['accounts', 'Bank account(s) line'], ['dueDays', 'Default payment term (days)']].map(function (x) { return html`<${Field} key=${x[0]} label=${x[1]}><input class="inp" value=${f[x[0]]} onInput=${up(x[0])} /><//>`; })}
+      </div></section>
+    <section class="card pad stack" aria-label="Fiscal"><b>Fiscal codes (SEP portal)</b>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+        <${Field} label="Business unit code"><input class="inp mono" value=${f.fiscal.bu} onInput=${upF('bu')} /><//>
+        <${Field} label="ENU (device) code – DAA Pay"><input class="inp mono" value=${f.fiscal.enu} onInput=${upF('enu')} /><//>
+        <${Field} label="Software code – DAA Pay"><input class="inp mono" value=${f.fiscal.sw} onInput=${upF('sw')} /><//>
+      </div>
+      <b style="font-size: 14px; margin-top: 6px">Operator codes of the people who issue invoices</b>
+      ${issuers.map(function (u) { return html`<div key=${u.id} class="row" style="flex-wrap: nowrap"><span style="flex: 1">${nameOf(u)} <span class="muted" style="font-size: 12px">${ROLE[u.role]}</span></span><input class="inp mono" style="max-width: 200px" aria-label=${'Operator code for ' + nameOf(u)} placeholder="e.g. gv983hs641" value=${f.operators[u.id] != null ? f.operators[u.id] : operatorOf(u.id)} onInput=${function (e) { var o = Object.assign({}, f); o.operators = Object.assign({}, f.operators); o.operators[u.id] = e.target.value.trim(); set(o); }} /></div>`; })}
+      <div class="muted" style="font-size: 12px">Fiscalization: ${c.fiscal.enabled ? 'on' : 'off while it is being verified (the certificate is stored on the server; the check against a known invoice must pass first).'}</div>
+      <div class="row"><button class="btn" onClick=${save}>Save settings</button></div>
+    </section>`;
 }
 
 var root = document.getElementById('app');

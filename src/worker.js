@@ -2,8 +2,8 @@ import { vapidKeys, sendPush } from './push.js';
 // DAA Pay — Cloudflare Worker: API, sign-in, role rules, files, email, weekly report, backups.
 // Static files (the app itself) are served from ./public by the ASSETS binding.
 
-const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-const APP_VERSION = '0.7.0';
+const COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces', 'invoices', 'settings'];
+const APP_VERSION = '0.8.0';
 const STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment', 'Paid', 'Denied'];
 const KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 const ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
@@ -220,6 +220,7 @@ async function pushNotif(env, n) {
   const url = n.itemId ? '/?open=' + encodeURIComponent(n.itemId) : (n.reg || n.bug) ? '/?tab=users' : '/';
   return pushTo(env, to, { title: 'DAA Pay · ' + (PUSH_TITLE[kind] || 'DAA Pay'), body: String(n.text || '').slice(0, 240), url, tag: n.id || '', urgent: kind === 'critical' || kind === 'payment' });
 }
+const INV_ROLES = ['sa', 'ceo', 'om', 'am'];
 const wants = (u, kind, ch) => !(u && u.notify && u.notify[kind] && u.notify[kind][ch || 'email'] === false);
 // An assistant's account managers: a list of ids; an empty list means all account managers.
 function mgrsOf(u) { return Array.isArray(u.managerIds) ? u.managerIds : u.managerId ? [u.managerId] : []; }
@@ -406,6 +407,7 @@ async function sync(env, me, since) {
     else if (r.col === 'items') { if (!itemVisible(me, Object.assign({ id: r.id }, d), usersById)) continue; }
     else if (r.col === 'notifs') { if (!notifVisible(me, d)) continue; }
     else if (r.col === 'bugs') { if (!isTop(me.role) && d.by !== me.id) continue; }
+    else if (r.col === 'invoices') { if (!INV_ROLES.includes(me.role)) continue; }
     else if (r.col === 'log') { if (!isTop(me.role) && d.by !== me.id && !(d.itemId && items[d.itemId] && itemVisible(me, Object.assign({ id: d.itemId }, items[d.itemId]), usersById))) continue; }
     out[r.col].push({ id: r.id, data: d });
   }
@@ -504,6 +506,19 @@ async function writeDoc(env, me, b, ctx) {
   } else if (col === 'news') {
     if (!top || !cur) deny('Only the CEO or Super-admin can manage announcements.');
     if (op !== 'delete') { const ks = Object.keys(data); if (!ks.every((k) => ['active', 'until'].includes(k))) deny(); next = merge(cur, Object.assign({}, data, data.active === false ? { endedBy: me.id, endedAt: podgoricaStamp().short } : {})); }
+  } else if (col === 'invoices') {
+    // Outgoing invoices. Fiscal data (number, IKOF, JIKR) is written only by the server's fiscalization, never through here.
+    if (!INV_ROLES.includes(role)) deny('Your role cannot work with outgoing invoices.');
+    const PROTECTED = ['fiscal', 'ordNum', 'number', 'status', 'issuedAt', 'issuedBy'];
+    if (op === 'delete') { if (!cur || cur.status !== 'draft' || !(cur.by === me.id || top)) deny('Only drafts can be deleted (fiscalized invoices are corrected with a corrective invoice).'); }
+    else if (!cur) { for (const k of PROTECTED) delete next[k]; next.status = 'draft'; next.by = me.id; next.ts = now(); }
+    else if (cur.status !== 'draft') {
+      const PAY = ['pay', 'paidAmount', 'payNote', 'payAt', 'payBy'];
+      if (!Object.keys(data).every((k) => PAY.includes(k)) || !(top || role === 'om')) deny('A fiscalized invoice cannot be changed; only its payment status (CEO, Super-admin, office manager).');
+      next = merge(cur, data);
+    } else { for (const k of PROTECTED) if (k in data && JSON.stringify(data[k]) !== JSON.stringify(cur[k])) deny(); next.by = cur.by; next.ts = cur.ts; next.status = 'draft'; }
+  } else if (col === 'settings') {
+    if (!top) deny('Only the CEO or Super-admin can change company and fiscal settings.');
   } else if (col === 'ces') {
     if (op === 'delete' && cur && cur.by !== me.id && !top) deny('Only the author, the CEO or the Super-admin can delete a cost estimate.');
     if (op !== 'delete') {
