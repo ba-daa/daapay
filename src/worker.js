@@ -784,9 +784,9 @@ async function notifyBeneficiary(env, me, b) {
     lines.push('Za pitanja odgovorite na ovaj email. / For any questions, reply to this email.', 'S poštovanjem / Kind regards,\nDAA Montenegro d.o.o.');
     const rows = [[x.kind === 'invoice' ? 'Račun / Invoice' : x.kind === 'refund' ? 'Refundacija / Refund' : 'Isplata / Payment', ref || '—'], ['Iznos / Amount', fmt(x.amount) + ' EUR']].concat(acct ? [['Račun primaoca / Account', acct]] : []);
     const subject = 'DAA Montenegro: ' + (ev === 'sent' ? 'plaćanje u obradi / payment in progress' : 'plaćeno / paid') + (ref ? ' · ' + ref : '');
-    const m = mailOf(env, [x.benEmail], subject, ev === 'sent' ? 'Poslato na plaćanje / Sent for payment' : 'Plaćeno / Paid', lines, null, rows, null, { name: 'DAA Montenegro d.o.o.', logo: '/static/daa-logo.png', w: 36, h: 47, footer: 'DAA Montenegro d.o.o. · PIB 02764318' });
-    m.from = 'DAA Montenegro <' + fromName + '>';
-    if (me.email) m.replyTo = me.email;
+    const m = ev === 'paid' ? paidMailToBen(env, x, ref) : mailOf(env, [x.benEmail], subject, ev === 'sent' ? 'Poslato na plaćanje / Sent for payment' : 'Plaćeno / Paid', lines, null, rows, null, { name: 'DAA Montenegro d.o.o.', logo: '/static/daa-logo.png', w: 36, h: 47, footer: 'DAA Montenegro d.o.o. · PIB 02764318' });
+    m.from = 'DAA Montenegro <' + fromName + '>'; m.subject = subject;
+    m.replyTo = procurementMail(env);
     let rec;
     try { await sendMail(env, m); rec = { ok: true, at: podgoricaStamp().short, to: x.benEmail, by: me.id }; sent++; }
     catch (e) { rec = { ok: false, at: podgoricaStamp().short, to: x.benEmail, err: e.message.slice(0, 200) }; why = e.message; }
@@ -795,6 +795,27 @@ async function notifyBeneficiary(env, me, b) {
     await logEvent(env, me.id, 'email', (ev === 'sent' ? 'Sent-to-payment' : 'Paid') + ' notice ' + (rec.ok ? 'emailed' : 'failed') + ' to ' + x.benEmail + ' for ' + pq(x.pqn), id);
   }
   return json({ ok: true, sent, why });
+}
+// The "paid" notice to a supplier: the same table as the internal paid email, worded for someone outside DAA.
+function benAcct(x) {
+  const f = (l) => ((x.fields || []).find((y) => y.label === l) || {}).value || '';
+  const a = x.kind === 'invoice' ? (x.account || '') : (f('Account number') || f('IBAN / SWIFT'));
+  return a ? a + (x.kind === 'invoice' && x.bank ? ' · ' + x.bank : '') : '—';
+}
+function paidMailToBen(env, x, ref) {
+  const KB = { invoice: 'Račun / Invoice', refund: 'Refundacija / Refund', contract: 'Isplata po ugovoru / Contract payment' };
+  const rows = [[x.kind === 'invoice' ? 'Broj računa / Invoice no.' : 'Osnov / Reference', ref || '—'], ['Vrsta / Type', KB[x.kind] || 'Uplata / Payment'],
+    ['Uplatilac / Paid by', 'DAA Montenegro d.o.o.'], ['Primalac / Paid to', x.title || '—'], ['Iznos / Amount', fmt(x.amount) + ' EUR'],
+    ['Račun primaoca / Bank account', benAcct(x)], ['Status', 'Plaćeno / Paid'], ['Datum uplate / Paid on', podgoricaStamp().date]];
+  const greet = 'Poštovani, / Dear Sir or Madam,';
+  const lead = ['Obavještavamo vas da je uplata izvršena.', 'We are letting you know that the payment has been executed.'];
+  const tail = ['Za pitanja odgovorite na ovaj email. / For any questions, reply to this email.', 'S poštovanjem / Kind regards,', 'DAA Montenegro d.o.o.'];
+  const html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;font-size:14px;line-height:1.45"><p>' + esc(greet) + '</p>' + lead.map((l) => '<p style="margin:0 0 4px">' + esc(l) + '</p>').join('') +
+    '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #111;margin:14px 0 16px;min-width:320px">' +
+    rows.map((r, j) => '<tr' + (j === 0 ? ' style="background:#111;color:#fff"' : '') + '><th align="left" style="border-bottom:1px solid #ddd;font-weight:600;padding-right:16px">' + esc(r[0]) + '</th><td style="border-bottom:1px solid #ddd' + (r[0] === 'Status' || r[0].startsWith('Iznos') ? ';font-weight:700' : '') + '">' + esc(r[1]) + '</td></tr>').join('') +
+    '</table>' + tail.map((l, i) => '<p style="margin:0 0 ' + (i ? '2px' : '12px') + '">' + esc(l) + '</p>').join('') + '</div>';
+  const text = greet + '\n\n' + lead.join('\n') + '\n\n' + rows.map((r) => r[0] + ': ' + r[1]).join('\n') + '\n\n' + tail.join('\n') + '\n';
+  return { to: [x.benEmail], html, text };
 }
 // Email the initiator that their request was denied, with the reason (unless they turned it off).
 async function notifyDenied(env, me, b) {
@@ -888,6 +909,8 @@ function mailOf(env, to, subject, heading, lines, button, rows, tag, brand) {
   const text = heading + '\n\n' + lines.join('\n\n') + (rows && rows.length ? '\n\n' + rows.map((r) => r.join(' · ')).join('\n') : '') + (button ? '\n\n' + button.label + ': ' + button.url : '') + '\n';
   return { to, subject, html, text };
 }
+// Replies to sent-to-payment and paid emails (internal and to suppliers) go to procurement.
+const procurementMail = (env) => env.PROCUREMENT_EMAIL || 'procurement@daa.co.me';
 const appUrl = (env) => env.APP_URL || 'https://daa-pay.workers.dev';
 async function sendMail(env, m) {
   if (!env.RESEND_API_KEY) fail(503, 'Email is not set up yet. Add RESEND_API_KEY to the Cloudflare Worker.');
@@ -906,7 +929,7 @@ async function sendMailApi(env, me, b) {
   if (NOTIFY_KINDS.includes(b.kind)) { const off = new Set(users.filter((u) => !wants(u, b.kind)).map((u) => (u.email || '').toLowerCase())); to = to.filter((x) => !off.has(x)); if (!to.length) return json({ ok: true, skipped: true }); }
   const attachments = (b.attachments || []).slice(0, 3).map((a) => ({ filename: String(a.filename || 'file.pdf').slice(0, 120), content: String(a.content || '') }));
   if (attachments.reduce((n, a) => n + a.content.length, 0) > 25e6) fail(413, 'The attachment is too large to email.');
-  await sendMail(env, { to, subject: String(b.subject || '').slice(0, 300), text: String(b.body || ''), html: String(b.htmlBody || ''), attachments });
+  await sendMail(env, Object.assign({ to, subject: String(b.subject || '').slice(0, 300), text: String(b.body || ''), html: String(b.htmlBody || ''), attachments }, b.kind === 'payment' || b.kind === 'paid' ? { replyTo: procurementMail(env) } : {}));
   return json({ ok: true });
 }
 
