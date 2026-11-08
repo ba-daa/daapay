@@ -87,11 +87,19 @@ jobs:
           openssl pkcs8 -topk8 -nocrypt -in "$d/k.pem" -out "$d/k8.pem" 2>/dev/null || cp "$d/k.pem" "$d/k8.pem"
           subj=$(openssl x509 -in "$d/c.pem" -noout -subject | sed 's/^subject=//'); until=$(openssl x509 -in "$d/c.pem" -noout -enddate | cut -d= -f2)
           match=""; n=0
-          ikof_of() { printf '%s' "$1" | openssl dgst -sha256 -sign "$d/k8.pem" | openssl dgst -md5 -r | cut -d' ' -f1; }
-          # Exact data the old software signed, as encoded in invoice 205/2026's QR code (sw = software code du194fm146).
-          for s in "02764318|2026-11-08T21:16:17+01:00|205|ta408js210|qs766qf990|du194fm146|506.04"; do
-            n=$((n+1)); [ "$(ikof_of "$s")" = "b75ea584a8d76231d2b91ef41cbf98dd" ] && match="$s"
+          ikof_with() { printf '%s' "$2" | openssl dgst -sha256 -sign "$1" | openssl dgst -md5 -r | cut -d' ' -f1; }
+          S="02764318|2026-11-08T21:16:17+01:00|205|ta408js210|qs766qf990|du194fm146|506.04"   # exact data from invoice 205/2026's QR code
+          # The .p12 may hold several keys/certificates: list them (names and dates only) and try every key.
+          p12 -nokeys -out "$d/all.pem"; nc=$(grep -c 'BEGIN CERTIFICATE' "$d/all.pem"); nk=$(grep -c 'PRIVATE KEY-----' "$d/k.pem" | awk '{print int($1/2)}')
+          csplit -s -z -f "$d/cert" "$d/all.pem" '/-----BEGIN CERTIFICATE-----/' '{*}' 2>/dev/null || true
+          info=""; for f in "$d"/cert*; do grep -q 'BEGIN CERTIFICATE' "$f" || continue; info="$info [$(openssl x509 -in "$f" -noout -subject -nameopt RFC2253 2>/dev/null | sed 's/subject=//' | cut -c1-90) | issuer: $(openssl x509 -in "$f" -noout -issuer -nameopt RFC2253 2>/dev/null | sed 's/issuer=//' | cut -c1-60) | until $(openssl x509 -in "$f" -noout -enddate | cut -d= -f2)]"; done
+          echo "::notice title=Fiscal certificate contents::$nk private key(s), $nc certificate(s):$info"
+          csplit -s -z -f "$d/key" "$d/k.pem" '/-----BEGIN .*PRIVATE KEY-----/' '{*}' 2>/dev/null || true
+          kmatch=""; for f in "$d"/key*; do grep -q 'PRIVATE KEY' "$f" || continue; n=$((n+1))
+            [ "$(openssl pkey -in "$f" -pubout 2>/dev/null | openssl dgst -sha256 -r | cut -c1-16)" = "$(openssl x509 -in "$d/c.pem" -noout -pubkey | openssl dgst -sha256 -r | cut -c1-16)" ] && kmatch="key $n matches the certificate"
+            [ "$(ikof_with "$f" "$S")" = "b75ea584a8d76231d2b91ef41cbf98dd" ] && { match="$S (key $n)"; cp "$f" "$d/k8.pem"; }
           done
+          echo "::notice title=Fiscal key check::${kmatch:-no key matches the main certificate}"
           if [ -n "$match" ]; then echo "::notice title=Fiscal certificate OK::$subj, valid until $until. IKOF of invoice 205/2026 recalculated exactly from: $match"
           else echo "::warning title=Fiscal certificate::Opened ($subj, valid until $until), but the exact data of invoice 205/2026 (from its QR code) did not give its IKOF. The old software may sign with a different certificate. Fiscalization stays off."; fi
           sp() { out=$(npx wrangler secret put "$1" < "$2" 2>&1) || echo "::error title=Storing $1::$(echo "$out" | grep -v '^\s*$' | tail -4 | tr '\n' ' ' | cut -c1-600)"; }
