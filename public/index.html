@@ -205,6 +205,7 @@ dl.kv dd { margin: 2px 0 0; font-weight: 500; white-space: pre-line; word-break:
 .inp.off { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .ce-tl { justify-content: space-between; flex-wrap: nowrap; }
 .ce-ed { padding-bottom: 40px; }
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 4px 2px 24px; }
 .mgrbtn { text-align: left; background-image: var(--chev); background-repeat: no-repeat; background-position: right 14px center; background-size: 12px 8px; padding-right: 40px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mgri { gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; flex-wrap: nowrap; }
 .mgri:hover { background: var(--soft); }
@@ -347,7 +348,7 @@ var STATUS = ['To review', 'Approved', 'Approved for payment', 'Sent to payment'
 var KIND = { invoice: 'Invoice', refund: 'Refund', contract: 'Contract payment' };
 var ROLE = { sa: 'Super-admin', ceo: 'CEO', am: 'Account manager', aa: 'Account assistant', om: 'Office manager' };
 var COLS = ['users', 'regs', 'items', 'clients', 'projects', 'bens', 'notifs', 'log', 'bugs', 'news', 'svc', 'svccats', 'ces'];
-var APP_VERSION = '0.6.5';
+var APP_VERSION = '0.6.6';
 
 // ---------- global store
 var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, err: '', data: {}, loaded: {}, me: null, tick: function () {},
@@ -355,7 +356,16 @@ var G = { db: null, assets: null, downloads: null, ready: false, noDb: false, er
 COLS.forEach(function (c) { G.data[c] = []; });
 function redraw() { G.tick(); }
 function setUi(p) { Object.assign(G.ui, p); redraw(); }
-function blankFilter() { return { type: 'all', status: 'all', client: 'all', project: 'all', from: '', to: '' }; }
+function blankFilter() { return { q: '', type: 'all', status: 'all', client: 'all', project: 'all', from: '', to: '' }; }
+// Queue search: number, supplier/beneficiary, invoice no., PIB, account, email, amount, dates, client, project, who added it, status, details.
+function itemText(x) {
+  return [pqNo(x.pqn), x.title, x.number, x.pib, x.pdv, x.account, x.benEmail, x.date, x.due, KIND[x.kind], STATUS[x.status || 0], clientName(x.clientId), projectName(x.projectId),
+    projNumber(byId(G.data.projects, x.projectId)), userName(x.by), x.amount != null ? fmt(x.amount) + ' ' + String(x.amount) : '', x.estimate ? estLabel(x.estimate) : '', x.denyReason]
+    .concat((x.fields || []).map(function (f) { return f.value; })).concat((x.lineItems || []).map(function (i) { return i.name; })).join(' \u0001 ').toLowerCase();
+}
+function fold(t) { return String(t || '').toLowerCase().replace(/[čć]/g, 'c').replace(/š/g, 's').replace(/ž/g, 'z').replace(/đ/g, 'd').replace(/dj/g, 'd'); }
+var PAGE_SIZES = [50, 100, 0];
+function pageSize() { if (G.ui.pageSize != null) return G.ui.pageSize; try { var v = localStorage.getItem('daa-page'); if (v != null && PAGE_SIZES.indexOf(+v) >= 0) return +v; } catch (e) {} return 50; }
 var toastTimer = null;
 function toast(text, bad) { clearTimeout(toastTimer); setUi({ toast: { text: text, bad: !!bad } }); toastTimer = setTimeout(function () { setUi({ toast: null }); }, 6000); }
 
@@ -1452,7 +1462,9 @@ function Queue() {
   var narrow = useNarrow();
   var me = G.me, role = me.role, top = isTop(role), ui = G.ui, fl = ui.flt;
   var visible = itemsVisible();
+  var words = fold(fl.q || '').trim().split(/\s+/).filter(Boolean);
   var notType = visible.filter(function (x) {
+    if (words.length) { var t = fold(itemText(x)); for (var w = 0; w < words.length; w++) if (t.indexOf(words[w]) < 0) return false; }
     if (fl.status !== 'all' && String(x.status || 0) !== fl.status) return false;
     if (fl.client !== 'all' && x.clientId !== fl.client) return false;
     if (fl.project !== 'all' && x.projectId !== fl.project) return false;
@@ -1462,14 +1474,19 @@ function Queue() {
   });
   var colD = COLDEF.filter(function (c) { return c.key === ui.sort.key; })[0] || COLDEF[0];
   var shown = notType.filter(function (x) { return fl.type === 'all' || x.kind === fl.type; }).sort(function (a, b) { var A = colD.get(a), B = colD.get(b); return (A < B ? -1 : A > B ? 1 : 0) * ui.sort.dir; });
+  // Paging: 50, 100 or all rows; Load more adds a page. Back to the first page when filters or sorting change.
+  var ps = pageSize(), pkey = JSON.stringify([fl, ui.sort]);
+  if (ui.pageKey !== pkey) { ui.pageKey = pkey; ui.limit = ps; }
+  var limit = ps ? Math.max(ui.limit || ps, ps) : Infinity, rows = shown.slice(0, limit), more = shown.length - rows.length;
+  var setPage = function (n) { try { localStorage.setItem('daa-page', String(n)); } catch (e) {} setUi({ pageSize: n, limit: n }); };
   var picked = shown.filter(function (x) { return ui.checked[x.id]; });
-  var allChecked = shown.length > 0 && picked.length === shown.length;
+  var allChecked = rows.length > 0 && rows.every(function (x) { return ui.checked[x.id]; });
   var setF = function (k) { return function (e) { var p = Object.assign({}, fl); p[k] = e.target.value; if (k === 'client') p.project = 'all'; setUi({ flt: p }); }; };
   var canRemove = function (x) { return top || ((role === 'am' || x.by === me.id) && (x.status || 0) === 0); };
   var removable = picked.filter(canRemove);
   var roleNote = { am: 'Account manager: you see your own requests and those of your account assistants. You can approve or deny them, approve access requests and create account assistant accounts.', aa: 'Account assistant: you see and follow the requests you added.', om: 'Office manager: you see all requests. ' + visible.filter(function (x) { return x.status === 3; }).length + ' payment(s) sent by the CEO are waiting to be paid.' }[role];
   var activeN = ['status', 'client', 'project'].filter(function (k) { return fl[k] !== 'all'; }).length + (fl.from ? 1 : 0) + (fl.to ? 1 : 0);
-  var toggleAll = function () { var c = Object.assign({}, ui.checked); shown.forEach(function (x) { c[x.id] = !allChecked; }); setUi({ checked: c }); };
+  var toggleAll = function () { var c = Object.assign({}, ui.checked); rows.forEach(function (x) { c[x.id] = !allChecked; }); setUi({ checked: c }); };
   var docCount = picked.reduce(function (n, x) { return n + docsOf(x).length; }, 0);
 
   async function bulk(def, list) {
@@ -1492,6 +1509,12 @@ function Queue() {
     <${InstallHint} />
     ${roleNote && html`<div class="alert i">${roleNote}</div>`}
     <section class="card pad stack" aria-label="Filters">
+      <div class="row" style="flex-wrap: nowrap; gap: 8px">
+        <label style="flex: 1 1 auto; position: relative"><span class="sr">Search the queue</span>
+          <input id="f-q" class="inp" type="search" style="padding-left: 40px" placeholder="Search: PQ number, supplier, invoice no., PIB, account, amount, client, project…" value=${fl.q || ''} onInput=${function (e) { setUi({ flt: Object.assign({}, fl, { q: e.target.value }) }); }} />
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 13px; top: 13px; color: var(--muted)"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        </label>
+      </div>
       <div class="row chips"><span class="lab" style="font-size: 13px; font-weight: 500; margin-right: 4px">Payment type</span>
         ${[['all', 'All'], ['invoice', 'Invoices'], ['refund', 'Refunds'], ['contract', 'Contract payments']].map(function (t) {
           var n = notType.filter(function (x) { return t[0] === 'all' || x.kind === t[0]; }).length;
@@ -1508,7 +1531,7 @@ function Queue() {
         <button class="btn o" onClick=${function () { setUi({ flt: blankFilter() }); }}>Clear filters</button>
       </div>`}
       <div class="stats num">
-        <span><span class="muted">Showing </span><b>${shown.length}</b><span class="muted"> of ${visible.length}</span></span>
+        <span><span class="muted">${fl.q && fl.q.trim() || activeN || fl.type !== 'all' ? 'Matching ' : 'Showing '}</span><b>${shown.length}</b><span class="muted"> of ${visible.length}</span></span>
         <span><span class="muted">To review </span><b>${shown.filter(function (x) { return !x.status; }).length}</b></span>
         <span><span class="muted">Awaiting payment </span><b>${shown.filter(function (x) { return x.status === 3; }).length}</b></span>
         <span><span class="muted">Total shown </span><b>${fmt(shown.reduce(function (t, x) { return t + (x.amount || 0); }, 0))} €</b></span>
@@ -1516,7 +1539,7 @@ function Queue() {
     </section>
 
     ${picked.length > 0 && html`<div class="bulk" role="region" aria-label="Bulk actions">
-      <b style="flex-grow: 1">${picked.length} selected</b>
+      <b style="flex-grow: 1">${picked.length} selected${allChecked && picked.length < shown.length ? html` <button class="link" style="color: inherit; font-weight: 500; text-decoration: underline" onClick=${function () { var c = Object.assign({}, ui.checked); shown.forEach(function (x) { c[x.id] = true; }); setUi({ checked: c }); }}>Select all ${shown.length} matching</button>` : ''}</b>
       ${ACTIONS.filter(function (a) { return roleHas(role, a[0]); }).map(function (a) {
         var list = picked.filter(function (x) { return can(role, a[0], x.status || 0) && !(a[0] === 'send' && x.kind === 'invoice' && !acctUsable(x)); });
         return html`<button key=${a[0]} class="btn" disabled=${!list.length} onClick=${function () { bulk(a, list); }}>${a[1]} (${list.length})</button>`;
@@ -1530,17 +1553,17 @@ function Queue() {
       <button class="btn d" onClick=${doRemove}>Remove</button><button class="btn q" style="background: var(--surface)" onClick=${function () { setUi({ rmConfirm: false }); }}>Cancel</button>
     </div>`}
 
-    ${narrow ? html`<${MCards} shown=${shown} visible=${visible} allChecked=${allChecked} toggleAll=${toggleAll} />` : html`<section class="card" aria-label="Received" style="overflow: hidden">
+    ${narrow ? html`<${MCards} shown=${rows} visible=${visible} allChecked=${allChecked} toggleAll=${toggleAll} />` : html`<section class="card" aria-label="Received" style="overflow: hidden">
       <div class="scroll"><table class="t" style="min-width: 1180px">
         <thead><tr>
-          <th style="width: 44px; padding-left: 16px"><input class="ck" type="checkbox" aria-label="Select all shown" checked=${allChecked} onChange=${function () { var c = Object.assign({}, ui.checked); shown.forEach(function (x) { c[x.id] = !allChecked; }); setUi({ checked: c }); }} /></th>
+          <th style="width: 44px; padding-left: 16px"><input class="ck" type="checkbox" aria-label="Select all shown" checked=${allChecked} onChange=${function () { var c = Object.assign({}, ui.checked); rows.forEach(function (x) { c[x.id] = !allChecked; }); setUi({ checked: c }); }} /></th>
           ${COLDEF.map(function (c) {
             var on = c.key === ui.sort.key;
             return html`<th key=${c.key} class=${c.right ? 'r' : ''} aria-sort=${on ? (ui.sort.dir > 0 ? 'ascending' : 'descending') : 'none'}><button class="sortb" onClick=${function () { setUi({ sort: { key: c.key, dir: on ? -ui.sort.dir : 1 } }); }}>${c.label}<span class=${'ar' + (on ? ' on' : '')} aria-hidden="true">${on ? (ui.sort.dir > 0 ? '▲' : '▼') : '↕'}</span></button></th>`;
           })}
           <th><span class="sr">Original</span></th>
         </tr></thead>
-        <tbody>${shown.map(function (x) {
+        <tbody>${rows.map(function (x) {
           var st = x.status || 0;
           return html`<tr key=${x.id} class=${x.id === ui.open || ui.checked[x.id] ? 'sel' : ''}>
             <td style="padding-left: 16px"><input class="ck" type="checkbox" aria-label=${'Select ' + pqNo(x.pqn)} checked=${!!ui.checked[x.id]} onChange=${function () { var c = Object.assign({}, ui.checked); c[x.id] = !c[x.id]; setUi({ checked: c }); }} /></td>
@@ -1559,6 +1582,11 @@ function Queue() {
       </table></div>
       ${!shown.length && html`<div class="empty">${visible.length ? 'Nothing matches these filters.' : html`Nothing in the queue yet. Use <b>Add to payment queue</b> to upload invoices or add a refund or contract payment.`}</div>`}
     </section>`}
+    ${shown.length > 0 && html`<nav class="pager" aria-label="Pages">
+      <span class="muted num">Showing ${rows.length} of ${shown.length}</span>
+      ${more > 0 && html`<button class="btn sm" onClick=${function () { setUi({ limit: limit + ps }); }}>Load ${Math.min(ps, more)} more</button><button class="btn q sm" onClick=${function () { setUi({ limit: shown.length }); }}>Show all ${shown.length}</button>`}
+      <label class="row" style="gap: 6px; margin-left: auto; font-size: 13px; flex-wrap: nowrap"><span class="muted">Rows per page</span><select class="inp sm" style="width: auto" aria-label="Rows per page" value=${String(ps)} onChange=${function (e) { setPage(+e.target.value); }}>${PAGE_SIZES.map(function (n) { return html`<option value=${String(n)}>${n ? n : 'All'}</option>`; })}</select></label>
+    </nav>`}
   </main>`;
 }
 function MCards(p) {
